@@ -46,8 +46,12 @@ enum Export {
 
     /// Copies one finished recording. Returns true when it is (now or already) in the folder.
     @discardableResult
-    static func copy(_ dir: URL, _ info: RecordingInfo) -> Bool {
+    static func copy(_ dir: URL, _ info: RecordingInfo, allowWiFiOnly: Bool = true) -> Bool {
         guard info.state != .recording || info.isStale(), !info.tracks.isEmpty else { return false }
+        guard SyncPolicy.maySync else { return false }
+        // The broadcast extension can outlive the app's last connectivity observation. When the
+        // user requires Wi-Fi, only the foreground app may start an iCloud export.
+        guard !SyncPolicy.wifiOnly || allowWiFiOnly else { return false }
         if isExported(dir) { return true }
         guard let picked = folder() else { return false }
         let scoped = picked.startAccessingSecurityScopedResource()
@@ -79,7 +83,35 @@ enum Export {
 
     /// Everything finished but not yet copied (the extension may not reach the folder, or none was picked then).
     static func copyPending() {
-        guard folder() != nil else { return }
+        guard folder() != nil, SyncPolicy.maySync else { return }
         for (dir, info) in Store.all() where !isExported(dir) { copy(dir, info) }
+    }
+}
+
+/// A second copy under Documents is visible in Files > On My iPhone > Earshot.
+enum LocalArchive {
+    static var root: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Earshot", isDirectory: true)
+    }
+
+    static func copy(_ dir: URL, _ info: RecordingInfo) {
+        guard info.state != .recording || info.isStale(), !info.tracks.isEmpty else { return }
+        let fm = FileManager.default
+        let target = root.appendingPathComponent("\(Export.folderName(info)) \(info.id)", isDirectory: true)
+        do {
+            try fm.createDirectory(at: root, withIntermediateDirectories: true)
+            try fm.createDirectory(at: target, withIntermediateDirectories: true)
+            for track in info.tracks.values {
+                let source = dir.appendingPathComponent(track.file)
+                let destination = target.appendingPathComponent(track.file)
+                if !fm.fileExists(atPath: destination.path) { try fm.copyItem(at: source, to: destination) }
+            }
+            for name in ["info.json", "mac.json", "summary.md", "transcript.md", "纪要.md", "文字稿.md", "文字稿.srt"] {
+                let source = dir.appendingPathComponent(name)
+                let destination = target.appendingPathComponent(name)
+                if fm.fileExists(atPath: source.path) { try? fm.removeItem(at: destination); try fm.copyItem(at: source, to: destination) }
+            }
+        } catch { /* Keep the App Group recording as the authoritative copy. */ }
     }
 }

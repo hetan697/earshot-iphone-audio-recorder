@@ -87,7 +87,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
         save(state: .finished)
         // Straight into the picked iCloud folder if the extension may reach it; otherwise the app
         // copies it the next time it comes to the front.
-        if let dir, let info { Export.copy(dir, info) }
+        if let dir, let info { Export.copy(dir, info, allowWiFiOnly: false) }
         writers = [:]
         dir = nil
         info = nil

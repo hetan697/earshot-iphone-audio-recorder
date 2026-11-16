@@ -56,9 +56,17 @@ struct ContentView: View {
                 }
             }
             .navigationTitle("Earshot")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink(value: "settings") { Image(systemName: "gearshape") }
+                        .accessibilityLabel("设置")
+                }
+            }
             .navigationDestination(for: String.self) { id in
                 if id == "help" {
                     ActionButtonHelp()
+                } else if id == "settings" {
+                    SyncSettingsView()
                 } else if let item = library.items.first(where: { $0.id == id }) {
                     DetailView(item: item)
                 }
@@ -86,6 +94,28 @@ struct ContentView: View {
                 Text("只删手机上的这份；已经传到 Mac 的不受影响。")
             }
         }
+    }
+}
+
+private struct SyncSettingsView: View {
+    @ObservedObject private var connectivity = Connectivity.shared
+    @State private var wifiOnly = SyncPolicy.wifiOnly
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("仅 Wi-Fi 时同步到 Mac", isOn: $wifiOnly)
+                    .onChange(of: wifiOnly) { _, value in
+                        SyncPolicy.wifiOnly = value
+                        if !value { Export.copyPending() }
+                    }
+                LabeledContent("当前网络", value: connectivity.onWiFi ? "Wi-Fi" : "非 Wi-Fi")
+            } footer: {
+                Text("开启后，录音仍会保存在本机；只有连接 Wi-Fi 时才复制到所选文件夹供 Mac 转文字和整理。")
+            }
+        }
+        .navigationTitle("设置")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

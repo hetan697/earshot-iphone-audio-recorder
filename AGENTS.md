@@ -19,6 +19,23 @@ Read `docs/CONTRACT.md` before changing anything the phone and the Mac exchange.
 | `macos/` | Mac menu bar app (our build of [Cicada](https://github.com/wquguru/cicada) at `macos/UPSTREAM`, Apache-2.0, never updated from upstream): records only chosen apps plus your mic (Audio Hijack's job), live subtitles and notes; each finished recording is exported to `icloud_dir` for `mac/earshot.py`. See `macos/README.md` |
 | `examples/transcribe-whisper.sh` | Local transcriber example (whisper.cpp) for `transcribe_cmd` |
 
+## Recording storage and sync
+
+- Keep the App Group `Library/Recordings/` as the authoritative store used by the app and `devicectl`.
+- Finished recordings are also copied into the app's `Documents/Earshot/` directory. Keep the app's
+  `UIFileSharingEnabled` and `LSSupportsOpeningDocumentsInPlace` settings so the copies appear in
+  Files under **On My iPhone → Earshot**.
+- The Settings screen's Wi-Fi-only switch gates copies to the selected iCloud folder (the Mac sync
+  channel) and writes the policy into pending `info.json` files. Connectivity is observed by the
+  foreground app; the broadcast extension must defer that export when Wi-Fi-only is enabled because
+  its last observed network state may be stale. The Mac CLI must honor `wifiOnly` on its devicectl
+  path so that direct device reads cannot bypass the setting; iCloud copies are eligible because
+  the iPhone only publishes them on Wi-Fi.
+- `LocalArchive.copy` is intentionally repeatable: it refreshes metadata and Mac-generated text files
+  whenever the library reloads, while leaving existing audio files intact.
+- If changing how recordings cross between the phone and Mac, update `docs/CONTRACT.md` and preserve
+  its rule that audio is never uploaded by custom phone networking.
+
 ## Setup
 
 iPhone (macOS + Xcode + xcodegen, an Apple ID signed in to Xcode — a free Personal Team works, iOS 26+):

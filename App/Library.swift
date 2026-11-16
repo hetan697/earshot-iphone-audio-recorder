@@ -51,6 +51,7 @@ final class Library: ObservableObject {
             return Recording(info: info, mac: mac, dir: dir, bytes: bytes)
         }
         .sorted { $0.id > $1.id }
+        for item in items { LocalArchive.copy(item.dir, item.info) }
     }
 
     func delete(_ item: Recording) {

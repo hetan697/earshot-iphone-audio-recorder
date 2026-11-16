@@ -19,6 +19,8 @@ struct RecordingInfo: Codable, Equatable {
     var endedAt: Date?
     var state: State
     var scene: Scene?
+    /// Optional for compatibility with recordings created before the Wi-Fi-only setting existed.
+    var wifiOnly: Bool?
     var tracks: [String: Track] = [:]   // "app" (what the phone plays) and/or "mic"
 
     var duration: Double { tracks.values.map { $0.offset + $0.seconds }.max() ?? 0 }
@@ -81,7 +83,9 @@ enum Store {
     }
 
     static func write(_ info: RecordingInfo, to dir: URL) {
-        guard let data = try? encoder.encode(info) else { return }
+        var current = info
+        current.wifiOnly = SyncPolicy.wifiOnly
+        guard let data = try? encoder.encode(current) else { return }
         try? data.write(to: dir.appendingPathComponent("info.json"), options: .atomic)
     }
 
@@ -137,4 +141,23 @@ enum Standby {
         CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
                                              CFNotificationName(armedChanged as CFString), nil, nil, true)
     }
+}
+
+/// User preference shared with the broadcast extension. Connectivity is observed by the app.
+enum SyncPolicy {
+    private static let defaults = UserDefaults(suiteName: Store.group)
+    static var wifiOnly: Bool {
+        get { defaults?.object(forKey: "syncWiFiOnly") as? Bool ?? false }
+        set {
+            defaults?.set(newValue, forKey: "syncWiFiOnly")
+            // Carry the current policy with pending recordings so the Mac's devicectl path
+            // cannot bypass the Wi-Fi-only choice.
+            for (dir, info) in Store.all() { Store.write(info, to: dir) }
+        }
+    }
+    static var onWiFi: Bool {
+        get { defaults?.object(forKey: "syncOnWiFi") as? Bool ?? false }
+        set { defaults?.set(newValue, forKey: "syncOnWiFi") }
+    }
+    static var maySync: Bool { !wifiOnly || onWiFi }
 }

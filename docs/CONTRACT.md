@@ -64,3 +64,9 @@ Library/Recordings/<id>/transcript.md  Mac 写：带时间戳的文字稿
 ```
 
 Mac 对应路径由配置 `icloud_dir` 指定（默认 `~/Library/Mobile Documents/com~apple~CloudDocs/Earshot/录音`）。同一条录音（按 info.json 的 `id`）无论从 devicectl 还是 iCloud 来，只处理一次。
+
+## iPhone 本地副本与 Wi-Fi 同步设置
+
+- App 还会把已结束录音复制到自身 `Documents/Earshot/<文件夹名> <id>/`，通过 iOS「文件」App 的「我的 iPhone」位置访问。这份副本不属于 App Group，也不改变 `devicectl` 的容器布局。
+- 用户开启「仅 Wi-Fi 时同步到 Mac」后，App 只在检测到 Wi-Fi 时把录音复制到所选 iCloud 文件夹，并在待处理录音的 `info.json` 写入可选字段 `wifiOnly: true`。广播扩展不依赖可能过期的网络状态，在该模式下会延后导出，等 App 前台确认 Wi-Fi 后再补传。Mac 的 `devicectl` 通道遇到 `wifiOnly: true` 必须跳过该录音，避免绕过 iPhone 的网络限制；iCloud 副本只会在 iPhone 检测到 Wi-Fi 后发布，仍可正常处理。关闭时保持原有自动复制行为。
+- Mac 回写的 `mac.json`、纪要和文字稿会在 App 下次刷新录音库时同步到「文件」里的本地副本。
