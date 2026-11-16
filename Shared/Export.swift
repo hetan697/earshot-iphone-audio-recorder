@@ -1,7 +1,6 @@
 import Foundation
 
-/// Copies finished recordings into a folder the person picked once (an iCloud Drive folder the Mac also sees), so the Mac
-/// gets them anywhere, not only on the home Wi-Fi. Audio first, info.json last: once info.json is there,
+/// Copies finished recordings into a folder the person picked once in iCloud Drive. Audio first, info.json last: once info.json is there,
 /// the folder is complete (docs/CONTRACT.md, iCloud channel).
 enum Export {
     private static var bookmarkFile: URL {
@@ -49,9 +48,9 @@ enum Export {
     static func copy(_ dir: URL, _ info: RecordingInfo, allowWiFiOnly: Bool = true) -> Bool {
         guard info.state != .recording || info.isStale(), !info.tracks.isEmpty else { return false }
         guard SyncPolicy.maySync else { return false }
-        // The broadcast extension can outlive the app's last connectivity observation. When the
-        // user requires Wi-Fi, only the foreground app may start an iCloud export.
-        guard !SyncPolicy.wifiOnly || allowWiFiOnly else { return false }
+        // The broadcast extension can outlive the app's last connectivity observation. In
+        // Wi-Fi-only mode, only the foreground app may start an iCloud export.
+        guard SyncPolicy.mode != .wifiOnly || allowWiFiOnly else { return false }
         if isExported(dir) { return true }
         guard let picked = folder() else { return false }
         let scoped = picked.startAccessingSecurityScopedResource()

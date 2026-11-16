@@ -587,11 +587,6 @@ class Earshot:
                                 info = json.loads((record_work / "info.json").read_text(encoding="utf-8"))
                                 if not isinstance(info, dict) or info.get("version") != 1 or info.get("id") != rid:
                                     raise EarshotError("info.json 不符合契约")
-                                # The iPhone includes this policy in info.json. iCloud copies only
-                                # appear after the phone permits them; don't bypass that policy
-                                # by reading directly from the App Group over devicectl.
-                                if info.get("wifiOnly") is True:
-                                    continue
                                 if not processable(info, self.now()):
                                     continue
                                 title, directory = self.prepare(device, rid, info, files, record_work)

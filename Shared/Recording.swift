@@ -19,8 +19,6 @@ struct RecordingInfo: Codable, Equatable {
     var endedAt: Date?
     var state: State
     var scene: Scene?
-    /// Optional for compatibility with recordings created before the Wi-Fi-only setting existed.
-    var wifiOnly: Bool?
     var tracks: [String: Track] = [:]   // "app" (what the phone plays) and/or "mic"
 
     var duration: Double { tracks.values.map { $0.offset + $0.seconds }.max() ?? 0 }
@@ -83,9 +81,7 @@ enum Store {
     }
 
     static func write(_ info: RecordingInfo, to dir: URL) {
-        var current = info
-        current.wifiOnly = SyncPolicy.wifiOnly
-        guard let data = try? encoder.encode(current) else { return }
+        guard let data = try? encoder.encode(info) else { return }
         try? data.write(to: dir.appendingPathComponent("info.json"), options: .atomic)
     }
 
@@ -145,19 +141,37 @@ enum Standby {
 
 /// User preference shared with the broadcast extension. Connectivity is observed by the app.
 enum SyncPolicy {
+    enum Mode: String, CaseIterable, Codable, Hashable {
+        case always, never, wifiOnly
+    }
+
     private static let defaults = UserDefaults(suiteName: Store.group)
-    static var wifiOnly: Bool {
-        get { defaults?.object(forKey: "syncWiFiOnly") as? Bool ?? false }
+    static var mode: Mode {
+        get {
+            if let raw = defaults?.string(forKey: "icloudSyncMode"), let mode = Mode(rawValue: raw) { return mode }
+            return defaults?.bool(forKey: "syncWiFiOnly") == true ? .wifiOnly : .always
+        }
         set {
-            defaults?.set(newValue, forKey: "syncWiFiOnly")
-            // Carry the current policy with pending recordings so the Mac's devicectl path
-            // cannot bypass the Wi-Fi-only choice.
-            for (dir, info) in Store.all() { Store.write(info, to: dir) }
+            defaults?.set(newValue.rawValue, forKey: "icloudSyncMode")
+            defaults?.removeObject(forKey: "syncWiFiOnly")
         }
     }
+
+    static var networkAvailable: Bool {
+        get { defaults?.bool(forKey: "syncNetworkAvailable") ?? false }
+        set { defaults?.set(newValue, forKey: "syncNetworkAvailable") }
+    }
+
     static var onWiFi: Bool {
         get { defaults?.object(forKey: "syncOnWiFi") as? Bool ?? false }
         set { defaults?.set(newValue, forKey: "syncOnWiFi") }
     }
-    static var maySync: Bool { !wifiOnly || onWiFi }
+
+    static var maySync: Bool {
+        switch mode {
+        case .always: networkAvailable
+        case .never: false
+        case .wifiOnly: networkAvailable && onWiFi
+        }
+    }
 }

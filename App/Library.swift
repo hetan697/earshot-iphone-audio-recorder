@@ -23,6 +23,7 @@ final class Library: ObservableObject {
 
     init() {
         if ProcessInfo.processInfo.arguments.contains("-EarshotDemo") { Demo.seed() }
+        _ = Connectivity.shared
         Store.migrateLegacy()
         MicRecorder.shared.closeOrphans()
         reload()
@@ -36,7 +37,6 @@ final class Library: ObservableObject {
     }
 
     func reload() {
-        Task.detached(priority: .utility) { Export.copyPending() }
         let fm = FileManager.default
         let mixPreference = MixPreference.load()
         let mixSignature = mixPreference.signature ?? Data()

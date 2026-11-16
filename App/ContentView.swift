@@ -84,6 +84,7 @@ struct ContentView: View {
                 guard case .success(let url) = result else { return }
                 try? Export.setFolder(url)
                 exportFolder = Export.folderDisplayName
+                if Connectivity.shared.maySyncNow { Export.copyPending() }
                 library.reload()
             }
             .confirmationDialog("删除这条录音？", isPresented: Binding(get: { pendingDelete != nil },
@@ -103,20 +104,28 @@ struct ContentView: View {
 private struct SyncSettingsView: View {
     @EnvironmentObject private var library: Library
     @ObservedObject private var connectivity = Connectivity.shared
-    @State private var wifiOnly = SyncPolicy.wifiOnly
+    @State private var iCloudSyncMode = SyncPolicy.mode
     @State private var mixPreference = MixPreference.load()
 
     var body: some View {
         Form {
             Section {
-                Toggle("仅 Wi-Fi 时同步到 Mac", isOn: $wifiOnly)
-                    .onChange(of: wifiOnly) { _, value in
-                        SyncPolicy.wifiOnly = value
-                        if !value { Export.copyPending() }
+                Picker("同步至 iCloud", selection: Binding(
+                    get: { iCloudSyncMode },
+                    set: { mode in
+                        iCloudSyncMode = mode
+                        SyncPolicy.mode = mode
+                        if connectivity.maySyncNow { Export.copyPending() }
                     }
-                LabeledContent("当前网络", value: connectivity.onWiFi ? "Wi-Fi" : "非 Wi-Fi")
+                )) {
+                    Text("总是").tag(SyncPolicy.Mode.always)
+                    Text("从不").tag(SyncPolicy.Mode.never)
+                    Text("仅 Wi-Fi").tag(SyncPolicy.Mode.wifiOnly)
+                }
+                .pickerStyle(.segmented)
+                LabeledContent("当前网络", value: networkDescription)
             } footer: {
-                Text("开启后，录音仍会保存在本机；只有连接 Wi-Fi 时才复制到所选文件夹供 Mac 转文字和整理。")
+                Text(syncDescription)
             }
 
             Section {
@@ -184,6 +193,20 @@ private struct SyncSettingsView: View {
         mixPreference.levels = mixPreference.levels.clamped()
         mixPreference.save()
         library.reload()
+    }
+
+    private var networkDescription: String {
+        guard connectivity.pathResolved else { return "检测中" }
+        if connectivity.onWiFi { return "Wi-Fi" }
+        return connectivity.isConnected ? "蜂窝网络" : "无网络"
+    }
+
+    private var syncDescription: String {
+        switch iCloudSyncMode {
+        case .always: "录音完成后，有网络时自动复制到所选 iCloud 文件夹。"
+        case .never: "录音只保存在本机，不复制到 iCloud。"
+        case .wifiOnly: "录音仍保存在本机；连接 Wi-Fi 后才复制到所选 iCloud 文件夹。"
+        }
     }
 }
 

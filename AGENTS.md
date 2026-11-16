@@ -25,12 +25,11 @@ Read `docs/CONTRACT.md` before changing anything the phone and the Mac exchange.
 - Finished recordings are also copied into the app's `Documents/Earshot/` directory. Keep the app's
   `UIFileSharingEnabled` and `LSSupportsOpeningDocumentsInPlace` settings so the copies appear in
   Files under **On My iPhone → Earshot**.
-- The Settings screen's Wi-Fi-only switch gates copies to the selected iCloud folder (the Mac sync
-  channel) and writes the policy into pending `info.json` files. Connectivity is observed by the
-  foreground app; the broadcast extension must defer that export when Wi-Fi-only is enabled because
-  its last observed network state may be stale. The Mac CLI must honor `wifiOnly` on its devicectl
-  path so that direct device reads cannot bypass the setting; iCloud copies are eligible because
-  the iPhone only publishes them on Wi-Fi.
+- The Settings screen's iCloud sync policy is `always`, `never`, or `wifiOnly` and controls only
+  copies to the selected iCloud folder. Connectivity is observed by the foreground app; the broadcast
+  extension must defer iCloud export in `wifiOnly` mode because its last network observation may be
+  stale. Do not encode this iCloud preference into recording metadata or make the Mac CLI's separate
+  `devicectl` channel honor it.
 - `LocalArchive.copy` is intentionally repeatable: it refreshes metadata and Mac-generated text files
   whenever the library reloads, while leaving existing audio files intact.
 - For recordings with both `app` and `mic` tracks, the app asynchronously creates `balanced.m4a`

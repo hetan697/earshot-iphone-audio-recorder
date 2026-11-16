@@ -78,7 +78,9 @@ final class MicRecorder: ObservableObject {
             info.endedAt = Date()
             info.updatedAt = Date()
             Store.write(info, to: dir)
-            Task.detached { Export.copy(dir, info) }
+            if Connectivity.shared.maySyncNow {
+                Task.detached { Export.copy(dir, info) }
+            }
         }
         info = nil
         dir = nil

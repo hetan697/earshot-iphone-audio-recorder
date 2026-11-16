@@ -65,9 +65,9 @@ Library/Recordings/<id>/transcript.md  Mac 写：带时间戳的文字稿
 
 Mac 对应路径由配置 `icloud_dir` 指定（默认 `~/Library/Mobile Documents/com~apple~CloudDocs/Earshot/录音`）。同一条录音（按 info.json 的 `id`）无论从 devicectl 还是 iCloud 来，只处理一次。
 
-## iPhone 本地副本与 Wi-Fi 同步设置
+## iPhone 本地副本与 iCloud 同步设置
 
 - App 还会把已结束录音复制到自身 `Documents/Earshot/<文件夹名> <id>/`，通过 iOS「文件」App 的「我的 iPhone」位置访问。这份副本不属于 App Group，也不改变 `devicectl` 的容器布局。
 - 当 `app` 与 `mic` 两轨都存在时，App 会在本机副本中额外生成 `balanced.m4a`。设置里可选自动按两轨多个时间点的采样响度均衡并留峰值余量，或手动调整两轨增益；更改设置会重新生成已有混音。原始分轨不变，单轨录音不生成混音文件。
-- 用户开启「仅 Wi-Fi 时同步到 Mac」后，App 只在检测到 Wi-Fi 时把录音复制到所选 iCloud 文件夹，并在待处理录音的 `info.json` 写入可选字段 `wifiOnly: true`。广播扩展不依赖可能过期的网络状态，在该模式下会延后导出，等 App 前台确认 Wi-Fi 后再补传。Mac 的 `devicectl` 通道遇到 `wifiOnly: true` 必须跳过该录音，避免绕过 iPhone 的网络限制；iCloud 副本只会在 iPhone 检测到 Wi-Fi 后发布，仍可正常处理。关闭时保持原有自动复制行为。
+- iCloud 设置提供「总是」「从不」「仅 Wi-Fi」，只控制是否把录音复制到用户选择的 iCloud 文件夹。「总是」在 Wi-Fi 或蜂窝网络可用时复制；「从不」不复制；「仅 Wi-Fi」只在 Wi-Fi 下复制。Wi-Fi-only 模式下，广播扩展会延迟导出，等 App 前台确认 Wi-Fi 后补传。该偏好保存在 App Group defaults，不写入 `info.json`，也不改变 Mac 的独立 `devicectl` 通道。
 - Mac 回写的 `mac.json`、纪要和文字稿会在 App 下次刷新录音库时同步到「文件」里的本地副本。
