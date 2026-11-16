@@ -140,6 +140,24 @@ private struct SyncSettingsView: View {
                      ? "自动按两轨的采样响度均衡，并为重叠峰值留余量。"
                      : "手动调整两轨在本机 balanced.m4a 中的音量；0 dB 保持原始音量。更改会重新生成已有混音文件。")
             }
+
+            Section {
+                if let expirationDate = ActivationStatus.expirationDate {
+                    TimelineView(.periodic(from: .now, by: 60)) { timeline in
+                        let days = ActivationStatus.remainingDays(at: timeline.date) ?? 0
+                        let value = expirationDate <= timeline.date ? "已过期" : (days == 0 ? "不足 1 天" : "\(days) 天")
+                        LabeledContent("签名剩余", value: value)
+                            .foregroundStyle(days <= 1 ? .orange : .primary)
+                        LabeledContent("到期时间", value: expirationDate.formatted(date: .abbreviated, time: .shortened))
+                    }
+                } else {
+                    LabeledContent("签名剩余", value: "无法读取")
+                }
+            } header: {
+                Text("签名状态")
+            } footer: {
+                Text("根据当前安装包中的开发签名配置文件显示；重新安装后会更新。")
+            }
         }
         .navigationTitle("设置")
         .navigationBarTitleDisplayMode(.inline)
