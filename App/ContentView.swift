@@ -101,8 +101,10 @@ struct ContentView: View {
 }
 
 private struct SyncSettingsView: View {
+    @EnvironmentObject private var library: Library
     @ObservedObject private var connectivity = Connectivity.shared
     @State private var wifiOnly = SyncPolicy.wifiOnly
+    @State private var mixPreference = MixPreference.load()
 
     var body: some View {
         Form {
@@ -116,9 +118,54 @@ private struct SyncSettingsView: View {
             } footer: {
                 Text("开启后，录音仍会保存在本机；只有连接 Wi-Fi 时才复制到所选文件夹供 Mac 转文字和整理。")
             }
+
+            Section {
+                Picker("音量均衡", selection: Binding(
+                    get: { mixPreference.mode },
+                    set: { mixPreference.mode = $0; saveMixPreference() }
+                )) {
+                    Text("自动").tag(MixPreference.Mode.automatic)
+                    Text("手动").tag(MixPreference.Mode.manual)
+                }
+                .pickerStyle(.segmented)
+
+                if mixPreference.mode == .manual {
+                    mixSlider("手机声音", value: $mixPreference.levels.app)
+                    mixSlider("麦克风", value: $mixPreference.levels.mic)
+                }
+            } header: {
+                Text("本地混音比例")
+            } footer: {
+                Text(mixPreference.mode == .automatic
+                     ? "自动按两轨的采样响度均衡，并为重叠峰值留余量。"
+                     : "手动调整两轨在本机 balanced.m4a 中的音量；0 dB 保持原始音量。更改会重新生成已有混音文件。")
+            }
         }
         .navigationTitle("设置")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func mixSlider(_ title: String, value: Binding<Double>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(MixLevels.label(value.wrappedValue)).monospacedDigit().foregroundStyle(.secondary)
+            }
+            .font(.subheadline)
+            Slider(value: value, in: MixLevels.range, step: 1) { editing in
+                if !editing { saveMixPreference() }
+            }
+            .accessibilityLabel(title)
+            .accessibilityValue(MixLevels.label(value.wrappedValue))
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func saveMixPreference() {
+        mixPreference.levels = mixPreference.levels.clamped()
+        mixPreference.save()
+        library.reload()
     }
 }
 

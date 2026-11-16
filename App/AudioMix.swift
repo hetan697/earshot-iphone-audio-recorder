@@ -62,9 +62,9 @@ enum AudioMix {
     /// Creates an automatic level-balanced file for the Files archive. Each source is sampled at
     /// regular points through the recording, then track gains bring their average loudness closer
     /// together while leaving headroom for peaks when both tracks overlap.
-    static func exportBalanced(_ item: Recording, to out: URL) async throws {
+    static func exportBalanced(_ item: Recording, preference: MixPreference, to out: URL) async throws {
         guard item.info.tracks["app"] != nil, item.info.tracks["mic"] != nil else { return }
-        let levels = try balancedLevels(item)
+        let levels = preference.mode == .automatic ? try balancedLevels(item) : preference.levels.clamped()
         let tracks = try await composition(item)
         try? FileManager.default.removeItem(at: out)
         guard let session = AVAssetExportSession(asset: tracks.composition, presetName: AVAssetExportPresetAppleM4A) else {

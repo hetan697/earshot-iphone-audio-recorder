@@ -36,3 +36,30 @@ struct MixLevels: Codable, Equatable {
                   mic: min(max(mic, Self.range.lowerBound), Self.range.upperBound))
     }
 }
+
+/// How the additional Files-visible mixed recording balances its two source tracks.
+struct MixPreference: Codable, Equatable {
+    enum Mode: String, Codable, Hashable { case automatic, manual }
+    var mode: Mode = .automatic
+    var levels: MixLevels = .neutral
+
+    private static let key = "balancedMixPreference"
+    private static var defaults: UserDefaults? { UserDefaults(suiteName: Store.group) }
+
+    static func load() -> MixPreference {
+        guard let data = defaults?.data(forKey: key),
+              let preference = try? JSONDecoder().decode(MixPreference.self, from: data) else { return MixPreference() }
+        return MixPreference(mode: preference.mode, levels: preference.levels.clamped())
+    }
+
+    func save() {
+        guard let data = try? JSONEncoder().encode(MixPreference(mode: mode, levels: levels.clamped())) else { return }
+        Self.defaults?.set(data, forKey: Self.key)
+    }
+
+    var signature: Data? {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try? encoder.encode(MixPreference(mode: mode, levels: levels.clamped()))
+    }
+}

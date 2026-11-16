@@ -103,6 +103,10 @@ enum LocalArchive {
         recordingDirectory(info).appendingPathComponent("balanced.m4a")
     }
 
+    static func balancedMixPreferenceURL(_ info: RecordingInfo) -> URL {
+        recordingDirectory(info).appendingPathComponent(".balanced-settings.json")
+    }
+
     static func copy(_ dir: URL, _ info: RecordingInfo) {
         guard info.state != .recording || info.isStale(), !info.tracks.isEmpty else { return }
         let fm = FileManager.default

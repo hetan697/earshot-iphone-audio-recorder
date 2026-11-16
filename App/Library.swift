@@ -38,6 +38,8 @@ final class Library: ObservableObject {
     func reload() {
         Task.detached(priority: .utility) { Export.copyPending() }
         let fm = FileManager.default
+        let mixPreference = MixPreference.load()
+        let mixSignature = mixPreference.signature ?? Data()
         let dirs = (try? fm.contentsOfDirectory(at: Store.recordings, includingPropertiesForKeys: nil)) ?? []
         items = dirs.compactMap { dir in
             guard let data = try? Data(contentsOf: dir.appendingPathComponent("info.json")),
@@ -56,9 +58,16 @@ final class Library: ObservableObject {
             guard !item.isLive,
                   item.info.tracks["app"] != nil, item.info.tracks["mic"] != nil else { continue }
             let output = LocalArchive.balancedMixURL(item.info)
-            guard !fm.fileExists(atPath: output.path) else { continue }
+            let settingsURL = LocalArchive.balancedMixPreferenceURL(item.info)
+            let savedSignature = try? Data(contentsOf: settingsURL)
+            guard !fm.fileExists(atPath: output.path) || savedSignature != mixSignature else { continue }
             let directory = output.deletingLastPathComponent()
             let marker = directory.appendingPathComponent(".mixing", isDirectory: true)
+            if let attrs = try? fm.attributesOfItem(atPath: marker.path),
+               let modified = attrs[.modificationDate] as? Date,
+               Date().timeIntervalSince(modified) > 6 * 60 * 60 {
+                try? fm.removeItem(at: marker) // Recover if iOS stopped the app during a long export.
+            }
             do { try fm.createDirectory(at: marker, withIntermediateDirectories: false) }
             catch { continue } // Another reload already started this mix.
 
@@ -66,11 +75,15 @@ final class Library: ObservableObject {
                 let temporary = directory.appendingPathComponent(".balanced-\(UUID().uuidString).m4a")
                 defer { try? fm.removeItem(at: marker) }
                 do {
-                    try await AudioMix.exportBalanced(item, to: temporary)
-                    if !fm.fileExists(atPath: output.path) { try fm.moveItem(at: temporary, to: output) }
-                    else { try? fm.removeItem(at: temporary) }
+                    try await AudioMix.exportBalanced(item, preference: mixPreference, to: temporary)
+                    try? fm.removeItem(at: output)
+                    try fm.moveItem(at: temporary, to: output)
+                    try mixSignature.write(to: settingsURL, options: .atomic)
                 } catch {
                     try? fm.removeItem(at: temporary)
+                }
+                if MixPreference.load().signature != mixSignature {
+                    await MainActor.run { self.reload() }
                 }
             }
         }
