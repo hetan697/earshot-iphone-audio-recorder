@@ -3,6 +3,7 @@ import AVFoundation
 import Combine
 
 struct DetailView: View {
+    @EnvironmentObject private var library: Library
     let item: Recording
     @State private var tab = 0
     @State private var levels: MixLevels
@@ -34,6 +35,28 @@ struct DetailView: View {
                     Label("正在录音，停止后才能播放", systemImage: "waveform").foregroundStyle(.red)
                 } else if !item.info.tracks.isEmpty {
                     Player(item: item, levels: previewLevels)
+                }
+            }
+
+            if !item.isLive && !item.info.tracks.isEmpty {
+                Section {
+                    Label(localCopyStatus, systemImage: LocalArchive.failureMessage(in: item.dir) == nil
+                          ? (LocalArchive.hasCopy(item.info) ? "checkmark.folder" : "folder")
+                          : "exclamationmark.triangle.fill")
+                        .foregroundStyle(LocalArchive.failureMessage(in: item.dir) == nil ? Color.primary : Color.orange)
+                    Label(iCloudStatus, systemImage: iCloudSymbol)
+                        .foregroundStyle(Export.failureMessage(in: item.dir) == nil ? Color.primary : Color.orange)
+                    if transferCanRetry {
+                        Button {
+                            library.retryCopies(item)
+                        } label: {
+                            Label("重试保存与同步", systemImage: "arrow.clockwise")
+                        }
+                    }
+                } header: {
+                    Text("文件与 iCloud")
+                } footer: {
+                    Text("删除录音时可选择是否同时删除“文件”中的本机副本；iCloud 中已同步的副本不会随之删除。")
                 }
             }
 
@@ -125,6 +148,34 @@ struct DetailView: View {
         }).value {
             automaticLevels = calculated
         }
+    }
+
+    private var localCopyStatus: String {
+        if LocalArchive.failureMessage(in: item.dir) != nil { return "本机文件副本保存失败" }
+        return LocalArchive.hasCopy(item.info) ? "已保存到“文件”" : "本机文件副本待保存"
+    }
+
+    private var iCloudStatus: String {
+        if Export.isExported(item.dir) { return "已同步到 iCloud" }
+        if SyncPolicy.mode == .never { return "iCloud 同步已关闭" }
+        if Export.failureMessage(in: item.dir) != nil { return "iCloud 同步失败" }
+        if Export.folder() == nil { return "尚未选择 iCloud 文件夹" }
+        return "等待 iCloud 同步"
+    }
+
+    private var iCloudSymbol: String {
+        if Export.isExported(item.dir) { return "checkmark.icloud" }
+        if SyncPolicy.mode == .never { return "icloud.slash" }
+        if Export.failureMessage(in: item.dir) != nil { return "exclamationmark.triangle.fill" }
+        return "icloud"
+    }
+
+    private var transferCanRetry: Bool {
+        let localPending = !LocalArchive.hasCopy(item.info)
+            || LocalArchive.failureMessage(in: item.dir) != nil
+        let iCloudPending = SyncPolicy.mode != .never && Export.folder() != nil
+            && !Export.isExported(item.dir)
+        return localPending || iCloudPending || Export.failureMessage(in: item.dir) != nil
     }
 }
 
