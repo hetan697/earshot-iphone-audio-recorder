@@ -4,6 +4,8 @@ import UIKit
 struct ContentView: View {
     @EnvironmentObject private var library: Library
     @State private var pendingDeletion: DeletionRequest?
+    @State private var queuedDeletion: DeletionAction?
+    @State private var deletionError: String?
     @State private var selectedRecordingIDs = Set<String>()
     @State private var isSelecting = false
     @State private var choosingExportType = false
@@ -138,24 +140,23 @@ struct ContentView: View {
             .sheet(isPresented: Binding(get: { !exportFiles.isEmpty }, set: { if !$0 { exportFiles = [] } })) {
                 ActivityShareSheet(activityItems: exportFiles)
             }
-            .sheet(item: $pendingDeletion) { request in
+            .sheet(item: $pendingDeletion, onDismiss: performQueuedDeletion) { request in
                 DeleteCopiesSheet(
                     recordingCount: request.items.count,
                     filesCopyCount: request.items.filter { LocalArchive.hasAnyCopy($0.info) }.count,
                     iCloudCopyCount: request.items.filter { Export.isExported($0.dir) }.count
                 ) { fromList, filesCopy, iCloudCopy in
-                    do {
-                        try library.delete(ids: Set(request.items.map(\.id)), fromList: fromList,
-                                           filesCopy: filesCopy, iCloudCopy: iCloudCopy)
-                        if fromList {
-                            selectedRecordingIDs.subtract(request.items.map(\.id))
-                            isSelecting = false
-                        }
-                        return nil
-                    } catch {
-                        return error.localizedDescription
-                    }
+                    queuedDeletion = DeletionAction(request: request, fromList: fromList,
+                                                    filesCopy: filesCopy, iCloudCopy: iCloudCopy)
                 }
+            }
+            .alert("删除未完成", isPresented: Binding(
+                get: { deletionError != nil },
+                set: { if !$0 { deletionError = nil } }
+            )) {
+                Button("好") { deletionError = nil }
+            } message: {
+                Text(deletionError ?? "")
             }
             .alert("无法导出所选录音", isPresented: Binding(get: { exportError != nil }, set: { if !$0 { exportError = nil } })) {
                 Button("好") { exportError = nil }
@@ -185,6 +186,21 @@ struct ContentView: View {
     private func requestDeletion(_ items: [Recording]) {
         guard !items.isEmpty else { return }
         pendingDeletion = DeletionRequest(items: items)
+    }
+
+    private func performQueuedDeletion() {
+        guard let action = queuedDeletion else { return }
+        queuedDeletion = nil
+        do {
+            try library.delete(ids: Set(action.request.items.map(\.id)), fromList: action.fromList,
+                               filesCopy: action.filesCopy, iCloudCopy: action.iCloudCopy)
+            if action.fromList {
+                selectedRecordingIDs.subtract(action.request.items.map(\.id))
+                isSelecting = false
+            }
+        } catch {
+            deletionError = error.localizedDescription
+        }
     }
 
     private enum BatchExportSelection {
@@ -233,17 +249,23 @@ private struct DeletionRequest: Identifiable {
     let items: [Recording]
 }
 
+private struct DeletionAction {
+    let request: DeletionRequest
+    let fromList: Bool
+    let filesCopy: Bool
+    let iCloudCopy: Bool
+}
+
 private struct DeleteCopiesSheet: View {
     @Environment(\.dismiss) private var dismiss
     let recordingCount: Int
     let filesCopyCount: Int
     let iCloudCopyCount: Int
-    let onDelete: (Bool, Bool, Bool) -> String?
+    let onDelete: (Bool, Bool, Bool) -> Void
 
     @State private var deleteFromList = true
-    @State private var deleteFilesCopy = false
+    @State private var deleteFilesCopy = true
     @State private var deleteICloudCopy = false
-    @State private var errorMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -266,22 +288,11 @@ private struct DeleteCopiesSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("删除", role: .destructive) {
-                        if let error = onDelete(deleteFromList, deleteFilesCopy, deleteICloudCopy) {
-                            errorMessage = error
-                        } else {
-                            dismiss()
-                        }
+                        onDelete(deleteFromList, deleteFilesCopy, deleteICloudCopy)
+                        dismiss()
                     }
                     .disabled(!deleteFromList && !deleteFilesCopy && !deleteICloudCopy)
                 }
-            }
-            .alert("删除未完成", isPresented: Binding(
-                get: { errorMessage != nil },
-                set: { if !$0 { errorMessage = nil } }
-            )) {
-                Button("好") { errorMessage = nil }
-            } message: {
-                Text(errorMessage ?? "")
             }
         }
         .presentationDetents([.medium, .large])
