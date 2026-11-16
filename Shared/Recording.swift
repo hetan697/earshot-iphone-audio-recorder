@@ -139,6 +139,24 @@ enum Standby {
     }
 }
 
+/// Action Button behavior shared with the App Intents process.
+enum ActionButtonPreference {
+    enum Mode: String, CaseIterable, Codable, Hashable {
+        case phoneSound, conversation, automatic
+    }
+
+    private static let defaults = UserDefaults(suiteName: Store.group)
+    static var mode: Mode {
+        get {
+            guard let raw = defaults?.string(forKey: "actionButtonMode"), let mode = Mode(rawValue: raw) else {
+                return .phoneSound
+            }
+            return mode
+        }
+        set { defaults?.set(newValue.rawValue, forKey: "actionButtonMode") }
+    }
+}
+
 /// User preference shared with the broadcast extension. Connectivity is observed by the app.
 enum SyncPolicy {
     enum Mode: String, CaseIterable, Codable, Hashable {

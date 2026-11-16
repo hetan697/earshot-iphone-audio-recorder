@@ -106,9 +106,29 @@ private struct SyncSettingsView: View {
     @ObservedObject private var connectivity = Connectivity.shared
     @State private var iCloudSyncMode = SyncPolicy.mode
     @State private var mixPreference = MixPreference.load()
+    @State private var actionButtonMode = ActionButtonPreference.mode
 
     var body: some View {
         Form {
+            Section {
+                Picker("Action Button 默认行为", selection: Binding(
+                    get: { actionButtonMode },
+                    set: { mode in
+                        actionButtonMode = mode
+                        ActionButtonPreference.mode = mode
+                    }
+                )) {
+                    Text("手机声音 + 麦克风").tag(ActionButtonPreference.Mode.phoneSound)
+                    Text("现场对话（仅麦克风）").tag(ActionButtonPreference.Mode.conversation)
+                    Text("自动判断").tag(ActionButtonPreference.Mode.automatic)
+                }
+                .pickerStyle(.inline)
+            } header: {
+                Text("Action Button")
+            } footer: {
+                Text(actionButtonDescription)
+            }
+
             Section {
                 Picker("同步至 iCloud", selection: Binding(
                     get: { iCloudSyncMode },
@@ -201,6 +221,17 @@ private struct SyncSettingsView: View {
         guard connectivity.pathResolved else { return "检测中" }
         if connectivity.onWiFi { return "Wi-Fi" }
         return connectivity.isConnected ? "蜂窝网络" : "无网络"
+    }
+
+    private var actionButtonDescription: String {
+        switch actionButtonMode {
+        case .phoneSound:
+            "按 Action Button 打开系统录制面板，录手机播放的声音；要同时录入你说的话，请在面板中打开麦克风。"
+        case .conversation:
+            "按 Action Button 直接开始或停止麦克风录音。"
+        case .automatic:
+            "检测到手机正在播放声音时打开系统录制面板，否则直接录麦克风。"
+        }
     }
 
     private var syncDescription: String {

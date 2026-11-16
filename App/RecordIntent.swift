@@ -10,15 +10,15 @@ final class AppState: ObservableObject {
     let picker = BroadcastPicker()
 }
 
-/// The Action Button. One press picks the scene by itself:
+/// The Action Button follows the selected preference (phone sound by default):
 /// - 待命模式 session running → start / stop storing the phone's sound right away, no sheet;
 /// - recording already → stop (a screen-recorder session is stopped from Apple's sheet, opened for you);
-/// - another app is playing sound (video, live stream, meeting, call) → record that sound: the app opens
+/// - 自动判断: another app is playing sound (video, live stream, meeting, call) → record that sound: the app opens
 ///   Apple's screen-recorder sheet, one tap on 开始直播 (Apple requires that tap);
 /// - silence → record the microphone (a conversation) at once, in the background, with a Live Activity.
 struct RecordIntent: AudioRecordingIntent {
     static let title: LocalizedStringResource = "Earshot 录音"
-    static let description = IntentDescription("手机在放声音就录这个 App 的声音，没在放就录现场对话；录音中再按一次就停止。")
+    static let description = IntentDescription("按设置的 Action Button 默认行为录音；录音中再按一次就停止。")
     static let supportedModes: IntentModes = [.background, .foreground(.dynamic)]
 
     @MainActor
@@ -32,7 +32,25 @@ struct RecordIntent: AudioRecordingIntent {
             if Standby.armed { StandbyControl.disarm(); return .result() }
             if AVAudioSession.sharedInstance().isOtherAudioPlaying { StandbyControl.arm(); return .result() }
         }
-        if Store.broadcastIsLive() || AVAudioSession.sharedInstance().isOtherAudioPlaying {
+        let mode = ActionButtonPreference.mode
+        let shouldRecordPhoneSound: Bool
+        if Store.broadcastIsLive() {
+            // Always bring up Apple's sheet to stop an active broadcast, regardless of preference.
+            AppState.shared.pending = .picker
+            try await continueInForeground(nil, alwaysConfirm: false)
+            return .result()
+        } else {
+            switch mode {
+            case .phoneSound:
+                shouldRecordPhoneSound = true
+            case .conversation:
+                shouldRecordPhoneSound = false
+            case .automatic:
+                shouldRecordPhoneSound = AVAudioSession.sharedInstance().isOtherAudioPlaying
+            }
+        }
+
+        if shouldRecordPhoneSound {
             AppState.shared.pending = .picker
             try await continueInForeground(nil, alwaysConfirm: false)
             return .result()
