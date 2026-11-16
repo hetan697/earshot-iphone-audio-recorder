@@ -122,7 +122,7 @@ private struct SyncSettingsView: View {
                     Text("现场对话（仅麦克风）").tag(ActionButtonPreference.Mode.conversation)
                     Text("自动判断").tag(ActionButtonPreference.Mode.automatic)
                 }
-                .pickerStyle(.inline)
+                .pickerStyle(.navigationLink)
             } header: {
                 Text("Action Button")
             } footer: {
@@ -142,7 +142,7 @@ private struct SyncSettingsView: View {
                     Text("从不").tag(SyncPolicy.Mode.never)
                     Text("仅 Wi-Fi").tag(SyncPolicy.Mode.wifiOnly)
                 }
-                .pickerStyle(.segmented)
+                .pickerStyle(.navigationLink)
                 LabeledContent("当前网络", value: networkDescription)
             } header: {
                 Text("iCloud 同步")
