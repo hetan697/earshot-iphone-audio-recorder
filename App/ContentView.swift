@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var pendingDelete: Recording?
     @State private var selectedRecordingIDs = Set<String>()
     @State private var confirmingBulkDelete = false
+    @State private var standby = Standby.enabled
     @State private var path: [String] = []
 
     var body: some View {
@@ -17,6 +18,22 @@ struct ContentView: View {
                         .listRowBackground(Color.clear)
                 } footer: {
                     Text("现场对话：用麦克风录身边的人说话。手机声音：录正在播放的视频、直播、会议、通话，只录声音不存画面；想把自己说的话也录进去，在弹出的面板里打开麦克风。本机副本可在「文件」→「我的 iPhone」→「Earshot」查看；双音轨录音还会生成音量均衡后的 balanced.m4a。")
+                }
+
+                Section {
+                    Toggle("待命模式", isOn: Binding(get: { standby }, set: { standby = $0; Standby.enabled = $0 }))
+                    if standby {
+                        TimelineView(.periodic(from: .now, by: 2)) { _ in
+                            if Standby.isRunning {
+                                Label(Standby.armed ? "待命中 · 正在录" : "待命中：按 Action Button 开始录",
+                                      systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                            } else {
+                                Button("开启待命（点一次「开始直播」）") { AppState.shared.picker.tap() }
+                            }
+                        }
+                    }
+                } footer: {
+                    Text("录屏会话会常驻运行；开始前需在系统面板点一次「开始直播」。待命时不保存声音，按 Action Button 后才开始录制。")
                 }
 
                 if library.items.isEmpty {
@@ -108,7 +125,6 @@ private struct SyncSettingsView: View {
     @State private var iCloudSyncMode = SyncPolicy.mode
     @State private var mixPreference = MixPreference.load()
     @State private var actionButtonMode = ActionButtonPreference.mode
-    @State private var standby = Standby.enabled
     @State private var pickingFolder = false
     @State private var exportFolder = Export.folderDisplayName
 
@@ -136,20 +152,6 @@ private struct SyncSettingsView: View {
                     NavigationLink("如何设置 iPhone 操作按钮") { ActionButtonHelp() }
                 }
             }
-            Section {
-                Toggle("待命模式", isOn: Binding(get: { standby }, set: { standby = $0; Standby.enabled = $0 }))
-                if standby {
-                    TimelineView(.periodic(from: .now, by: 2)) { _ in
-                        if Standby.isRunning {
-                            Label(Standby.armed ? "待命中 · 正在录" : "待命中：按 Action Button 开始录",
-                                  systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-                        } else {
-                            Button("开启待命（点一次「开始直播」）") { AppState.shared.picker.tap() }
-                        }
-                    }
-                }
-            }
-
             Section {
                 Button { pickingFolder = true } label: {
                     LabeledContent("iCloud 文件夹", value: exportFolder ?? "未选择")
