@@ -36,10 +36,13 @@ struct ContentView: View {
                         }
                     }
                 } footer: {
-                    Text(exportFolder == nil
-                         ? "选 iCloud 云盘里一个和 Mac 共享的文件夹，录音会自动存进它的「录音」子文件夹，Mac 不在家也能收到并写好纪要。"
-                         : "录完自动存进去；Mac 写好的纪要和文字稿会出现在同一个文件夹里。")
-                         + Text("\n待命模式：录屏只开一次、一直在后台等着（不存任何声音，顶上红点常亮），之后看视频、直播时按一下 Action Button 就开始录，不用再点「开始直播」。")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(exportFolder == nil
+                             ? "选 iCloud 云盘里一个和 Mac 共享的文件夹，录音会自动存进它的「录音」子文件夹，Mac 不在家也能收到并写好纪要。"
+                             : "录完自动存进去；Mac 写好的纪要和文字稿会出现在同一个文件夹里。")
+                        Text("本机副本在「文件」→「我的 iPhone」→「Earshot」；同时录到手机声音和麦克风时，还会生成音量均衡后的 balanced.m4a。")
+                        Text("待命模式：录屏只开一次、一直在后台等着（不存任何声音，顶上红点常亮），之后看视频、直播时按一下 Action Button 就开始录，不用再点「开始直播」。")
+                    }
                 }
 
                 if library.items.isEmpty {

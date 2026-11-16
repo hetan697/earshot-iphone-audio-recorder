@@ -33,6 +33,10 @@ Read `docs/CONTRACT.md` before changing anything the phone and the Mac exchange.
   the iPhone only publishes them on Wi-Fi.
 - `LocalArchive.copy` is intentionally repeatable: it refreshes metadata and Mac-generated text files
   whenever the library reloads, while leaving existing audio files intact.
+- For recordings with both `app` and `mic` tracks, the app asynchronously creates `balanced.m4a`
+  beside the originals in the Files-visible archive. It samples both tracks across the recording,
+  adjusts their gains toward similar RMS loudness, and applies peak headroom; never replace the source
+  tracks with this convenience mix.
 - If changing how recordings cross between the phone and Mac, update `docs/CONTRACT.md` and preserve
   its rule that audio is never uploaded by custom phone networking.
 

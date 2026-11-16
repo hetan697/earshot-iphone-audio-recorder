@@ -51,7 +51,29 @@ final class Library: ObservableObject {
             return Recording(info: info, mac: mac, dir: dir, bytes: bytes)
         }
         .sorted { $0.id > $1.id }
-        for item in items { LocalArchive.copy(item.dir, item.info) }
+        for item in items {
+            LocalArchive.copy(item.dir, item.info)
+            guard !item.isLive,
+                  item.info.tracks["app"] != nil, item.info.tracks["mic"] != nil else { continue }
+            let output = LocalArchive.balancedMixURL(item.info)
+            guard !fm.fileExists(atPath: output.path) else { continue }
+            let directory = output.deletingLastPathComponent()
+            let marker = directory.appendingPathComponent(".mixing", isDirectory: true)
+            do { try fm.createDirectory(at: marker, withIntermediateDirectories: false) }
+            catch { continue } // Another reload already started this mix.
+
+            Task.detached(priority: .utility) {
+                let temporary = directory.appendingPathComponent(".balanced-\(UUID().uuidString).m4a")
+                defer { try? fm.removeItem(at: marker) }
+                do {
+                    try await AudioMix.exportBalanced(item, to: temporary)
+                    if !fm.fileExists(atPath: output.path) { try fm.moveItem(at: temporary, to: output) }
+                    else { try? fm.removeItem(at: temporary) }
+                } catch {
+                    try? fm.removeItem(at: temporary)
+                }
+            }
+        }
     }
 
     func delete(_ item: Recording) {

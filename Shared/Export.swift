@@ -95,10 +95,18 @@ enum LocalArchive {
             .appendingPathComponent("Earshot", isDirectory: true)
     }
 
+    static func recordingDirectory(_ info: RecordingInfo) -> URL {
+        root.appendingPathComponent("\(Export.folderName(info)) \(info.id)", isDirectory: true)
+    }
+
+    static func balancedMixURL(_ info: RecordingInfo) -> URL {
+        recordingDirectory(info).appendingPathComponent("balanced.m4a")
+    }
+
     static func copy(_ dir: URL, _ info: RecordingInfo) {
         guard info.state != .recording || info.isStale(), !info.tracks.isEmpty else { return }
         let fm = FileManager.default
-        let target = root.appendingPathComponent("\(Export.folderName(info)) \(info.id)", isDirectory: true)
+        let target = recordingDirectory(info)
         do {
             try fm.createDirectory(at: root, withIntermediateDirectories: true)
             try fm.createDirectory(at: target, withIntermediateDirectories: true)
