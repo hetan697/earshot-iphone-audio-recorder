@@ -7,6 +7,7 @@ struct ContentView: View {
     @State private var selectedRecordingIDs = Set<String>()
     @State private var isSelecting = false
     @State private var confirmingBulkDelete = false
+    @State private var choosingExportType = false
     @State private var isExporting = false
     @State private var exportFiles: [URL] = []
     @State private var exportError: String?
@@ -91,7 +92,7 @@ struct ContentView: View {
                 if isSelecting, !selectedRecordingIDs.isEmpty {
                     ToolbarItemGroup(placement: .bottomBar) {
                         Button {
-                            Task { await exportSelected() }
+                            choosingExportType = true
                         } label: {
                             Label(isExporting ? "正在准备" : "导出（\(selectedRecordingIDs.count)）", systemImage: "square.and.arrow.up")
                         }
@@ -140,6 +141,19 @@ struct ContentView: View {
             } message: {
                 Text("只删除手机上的所选录音；已经同步到 iCloud 的文件不受影响。")
             }
+            .confirmationDialog("选择导出内容", isPresented: $choosingExportType,
+                                titleVisibility: .visible) {
+                if selectedItems.contains(where: { $0.info.tracks["app"] != nil }) {
+                    Button("导出手机声音") { Task { await exportSelected(.phone) } }
+                }
+                if selectedItems.contains(where: { $0.info.tracks["mic"] != nil }) {
+                    Button("导出麦克风") { Task { await exportSelected(.microphone) } }
+                }
+                Button("按手动设置导出") { Task { await exportSelected(.manual) } }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("只会导出所选录音中包含相应音轨的项目。")
+            }
             .onChange(of: library.items) { _, items in
                 selectedRecordingIDs.formIntersection(Set(items.map(\.id)))
             }
@@ -158,6 +172,10 @@ struct ContentView: View {
         library.items.filter { !$0.isLive && !$0.info.tracks.isEmpty }
     }
 
+    private var selectedItems: [Recording] {
+        library.items.filter { selectedRecordingIDs.contains($0.id) && !$0.isLive && !$0.info.tracks.isEmpty }
+    }
+
     private var allSelectableItemsSelected: Bool {
         !selectableItems.isEmpty && selectedRecordingIDs == Set(selectableItems.map(\.id))
     }
@@ -168,21 +186,23 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func exportSelected() async {
+    private func exportSelected(_ selection: SharedAudio.Selection) async {
         isExporting = true
         defer { isExporting = false }
         do {
-            let preference = MixPreference.load()
-            let selectedItems = library.items.filter { selectedRecordingIDs.contains($0.id) && !$0.isLive && !$0.info.tracks.isEmpty }
             var files: [URL] = []
             for item in selectedItems {
-                let levels: MixLevels
-                if preference.mode == .automatic, item.info.tracks["app"] != nil, item.info.tracks["mic"] != nil {
-                    levels = try await Task.detached(priority: .utility) { try AudioMix.automaticLevels(for: item) }.value
-                } else {
-                    levels = MixLevels.load(item.dir)
+                switch selection {
+                case .phone:
+                    guard item.info.tracks["app"] != nil else { continue }
+                    files.append(try await AudioMix.exportTrack(item, key: "app"))
+                case .microphone:
+                    guard item.info.tracks["mic"] != nil else { continue }
+                    files.append(try await AudioMix.exportTrack(item, key: "mic"))
+                case .manual:
+                    let levels = MixLevels.load(item.dir)
+                    files.append(try await AudioMix.export(item, levels: levels))
                 }
-                files.append(try await AudioMix.export(item, levels: levels))
             }
             guard !files.isEmpty else { return }
             exportFiles = files
