@@ -90,15 +90,15 @@ final class Library: ObservableObject {
         objectWillChange.send() // refresh row delivery state after local archive attempts
     }
 
-    func delete(_ item: Recording, includingFilesCopy: Bool = false) {
-        if includingFilesCopy { try? LocalArchive.removeCopy(item.info) }
+    func delete(_ item: Recording) {
+        try? LocalArchive.removeCopy(item.info)
         try? FileManager.default.removeItem(at: item.dir)
         reload()
     }
 
-    func delete(ids: Set<String>, includingFilesCopy: Bool = false) {
+    func delete(ids: Set<String>) {
         for item in items where ids.contains(item.id) {
-            if includingFilesCopy { try? LocalArchive.removeCopy(item.info) }
+            try? LocalArchive.removeCopy(item.info)
             try? FileManager.default.removeItem(at: item.dir)
         }
         reload()

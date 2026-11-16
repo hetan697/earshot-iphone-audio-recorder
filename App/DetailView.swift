@@ -56,7 +56,7 @@ struct DetailView: View {
                 } header: {
                     Text("文件与 iCloud")
                 } footer: {
-                    Text("删除录音时可选择是否同时删除“文件”中的本机副本；iCloud 中已同步的副本不会随之删除。")
+                    Text("删除录音时会同时删除“文件”中的本机副本；iCloud 中已同步的副本会保留。")
                 }
             }
 

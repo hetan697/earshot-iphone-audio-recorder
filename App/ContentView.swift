@@ -124,35 +124,22 @@ struct ContentView: View {
             .confirmationDialog("删除这条录音？", isPresented: Binding(get: { pendingDelete != nil },
                                                                  set: { if !$0 { pendingDelete = nil } }),
                                 titleVisibility: .visible) {
-                Button("只删除录音列表中的副本", role: .destructive) {
+                Button("删除这条录音", role: .destructive) {
                     if let item = pendingDelete { library.delete(item) }
                     pendingDelete = nil
                 }
-                if let item = pendingDelete, LocalArchive.hasCopy(item.info) || LocalArchive.failureMessage(in: item.dir) != nil {
-                    Button("同时删除“文件”中的本机副本", role: .destructive) {
-                        if let item = pendingDelete { library.delete(item, includingFilesCopy: true) }
-                        pendingDelete = nil
-                    }
-                }
             } message: {
-                Text("已经同步到 iCloud 的副本不会删除。")
+                Text("会同时删除录音列表中的副本和“文件”里的本机副本；iCloud 中已同步的副本不会删除。")
             }
             .confirmationDialog("删除所选录音？", isPresented: $confirmingBulkDelete,
                                 titleVisibility: .visible) {
-                Button("只删除列表中的 \(selectedRecordingIDs.count) 条录音", role: .destructive) {
+                Button("删除 \(selectedRecordingIDs.count) 条录音", role: .destructive) {
                     library.delete(ids: selectedRecordingIDs)
                     selectedRecordingIDs.removeAll()
                     isSelecting = false
                 }
-                if selectedItems.contains(where: { LocalArchive.hasCopy($0.info) || LocalArchive.failureMessage(in: $0.dir) != nil }) {
-                    Button("同时删除所选的“文件”本机副本", role: .destructive) {
-                        library.delete(ids: selectedRecordingIDs, includingFilesCopy: true)
-                        selectedRecordingIDs.removeAll()
-                        isSelecting = false
-                    }
-                }
             } message: {
-                Text("已经同步到 iCloud 的副本不会删除。")
+                Text("会同时删除所选录音的列表副本和“文件”本机副本；iCloud 中已同步的副本不会删除。")
             }
             .confirmationDialog("选择导出内容", isPresented: $choosingExportType,
                                 titleVisibility: .visible) {
