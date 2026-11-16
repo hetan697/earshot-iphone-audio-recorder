@@ -56,7 +56,7 @@ struct DetailView: View {
                 } header: {
                     Text("文件与 iCloud")
                 } footer: {
-                    Text("删除录音时会同时删除“文件”中的本机副本；iCloud 中已同步的副本会保留。")
+                    Text("删除时可分别选择移除录音列表、“文件”本机副本和 iCloud 已同步副本。")
                 }
             }
 
@@ -152,10 +152,12 @@ struct DetailView: View {
 
     private var localCopyStatus: String {
         if LocalArchive.failureMessage(in: item.dir) != nil { return "本机文件副本保存失败" }
+        if LocalArchive.wasDeleted(in: item.dir) { return "已从“文件”删除" }
         return LocalArchive.hasCopy(item.info) ? "已保存到“文件”" : "本机文件副本待保存"
     }
 
     private var iCloudStatus: String {
+        if Export.wasDeleted(in: item.dir) { return "已从 iCloud 删除" }
         if Export.isExported(item.dir) { return "已同步到 iCloud" }
         if SyncPolicy.mode == .never { return "iCloud 同步已关闭" }
         if Export.failureMessage(in: item.dir) != nil { return "iCloud 同步失败" }
@@ -164,6 +166,7 @@ struct DetailView: View {
     }
 
     private var iCloudSymbol: String {
+        if Export.wasDeleted(in: item.dir) { return "icloud.slash" }
         if Export.isExported(item.dir) { return "checkmark.icloud" }
         if SyncPolicy.mode == .never { return "icloud.slash" }
         if Export.failureMessage(in: item.dir) != nil { return "exclamationmark.triangle.fill" }
@@ -172,9 +175,9 @@ struct DetailView: View {
 
     private var transferCanRetry: Bool {
         let localPending = !LocalArchive.hasCopy(item.info)
-            || LocalArchive.failureMessage(in: item.dir) != nil
-        let iCloudPending = SyncPolicy.mode != .never && Export.folder() != nil
-            && !Export.isExported(item.dir)
+            || LocalArchive.failureMessage(in: item.dir) != nil || LocalArchive.wasDeleted(in: item.dir)
+        let iCloudPending = (SyncPolicy.mode != .never && Export.folder() != nil
+            && !Export.isExported(item.dir)) || Export.wasDeleted(in: item.dir)
         return localPending || iCloudPending || Export.failureMessage(in: item.dir) != nil
     }
 }

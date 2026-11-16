@@ -90,22 +90,33 @@ final class Library: ObservableObject {
         objectWillChange.send() // refresh row delivery state after local archive attempts
     }
 
-    func delete(_ item: Recording) {
-        try? LocalArchive.removeCopy(item.info)
-        try? FileManager.default.removeItem(at: item.dir)
-        reload()
-    }
-
-    func delete(ids: Set<String>) {
-        for item in items where ids.contains(item.id) {
-            try? LocalArchive.removeCopy(item.info)
-            try? FileManager.default.removeItem(at: item.dir)
+    func delete(ids: Set<String>, fromList: Bool, filesCopy: Bool, iCloudCopy: Bool) throws {
+        let selected = items.filter { ids.contains($0.id) }
+        do {
+            if filesCopy {
+                for item in selected {
+                    try LocalArchive.removeCopy(item.info, suppressingFutureCopyAt: fromList ? nil : item.dir)
+                }
+            }
+            if iCloudCopy {
+                for item in selected { try Export.removeCopy(item.dir) }
+            }
+            if fromList {
+                for item in selected where FileManager.default.fileExists(atPath: item.dir.path) {
+                    try FileManager.default.removeItem(at: item.dir)
+                }
+            }
+        } catch {
+            reload()
+            throw error
         }
         reload()
     }
 
     func retryCopies(_ item: Recording) {
         guard !item.isLive else { return }
+        LocalArchive.allowCopyAgain(in: item.dir)
+        Export.allowCopyAgain(in: item.dir)
         LocalArchive.copy(item.dir, item.info)
         _ = Export.copy(item.dir, item.info)
         reload()

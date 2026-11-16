@@ -3,10 +3,9 @@ import UIKit
 
 struct ContentView: View {
     @EnvironmentObject private var library: Library
-    @State private var pendingDelete: Recording?
+    @State private var pendingDeletion: DeletionRequest?
     @State private var selectedRecordingIDs = Set<String>()
     @State private var isSelecting = false
-    @State private var confirmingBulkDelete = false
     @State private var choosingExportType = false
     @State private var isExporting = false
     @State private var exportFiles: [URL] = []
@@ -59,7 +58,7 @@ struct ContentView: View {
                             } else {
                                 NavigationLink(value: item.id) { Row(item: item) }
                                     .swipeActions {
-                                        Button("删除", role: .destructive) { pendingDelete = item }
+                                        Button("删除", role: .destructive) { requestDeletion([item]) }
                                     }
                             }
                         }
@@ -99,7 +98,7 @@ struct ContentView: View {
                         .disabled(isExporting)
                         Spacer()
                         Button(role: .destructive) {
-                            confirmingBulkDelete = true
+                            requestDeletion(selectedItems)
                         } label: {
                             Label("删除（\(selectedRecordingIDs.count)）", systemImage: "trash")
                         }
@@ -121,26 +120,6 @@ struct ContentView: View {
                 if args.contains("-EarshotDemoHelp") { path = ["help"] }
             }
             .refreshable { library.reload() }
-            .confirmationDialog("删除这条录音？", isPresented: Binding(get: { pendingDelete != nil },
-                                                                 set: { if !$0 { pendingDelete = nil } }),
-                                titleVisibility: .visible) {
-                Button("删除这条录音", role: .destructive) {
-                    if let item = pendingDelete { library.delete(item) }
-                    pendingDelete = nil
-                }
-            } message: {
-                Text("会同时删除录音列表中的副本和“文件”里的本机副本；iCloud 中已同步的副本不会删除。")
-            }
-            .confirmationDialog("删除所选录音？", isPresented: $confirmingBulkDelete,
-                                titleVisibility: .visible) {
-                Button("删除 \(selectedRecordingIDs.count) 条录音", role: .destructive) {
-                    library.delete(ids: selectedRecordingIDs)
-                    selectedRecordingIDs.removeAll()
-                    isSelecting = false
-                }
-            } message: {
-                Text("会同时删除所选录音的列表副本和“文件”本机副本；iCloud 中已同步的副本不会删除。")
-            }
             .confirmationDialog("选择导出内容", isPresented: $choosingExportType,
                                 titleVisibility: .visible) {
                 Button("导出手机声音") { Task { await exportSelected(.phone) } }
@@ -158,6 +137,25 @@ struct ContentView: View {
             }
             .sheet(isPresented: Binding(get: { !exportFiles.isEmpty }, set: { if !$0 { exportFiles = [] } })) {
                 ActivityShareSheet(activityItems: exportFiles)
+            }
+            .sheet(item: $pendingDeletion) { request in
+                DeleteCopiesSheet(
+                    recordingCount: request.items.count,
+                    filesCopyCount: request.items.filter { LocalArchive.hasAnyCopy($0.info) }.count,
+                    iCloudCopyCount: request.items.filter { Export.isExported($0.dir) }.count
+                ) { fromList, filesCopy, iCloudCopy in
+                    do {
+                        try library.delete(ids: Set(request.items.map(\.id)), fromList: fromList,
+                                           filesCopy: filesCopy, iCloudCopy: iCloudCopy)
+                        if fromList {
+                            selectedRecordingIDs.subtract(request.items.map(\.id))
+                            isSelecting = false
+                        }
+                        return nil
+                    } catch {
+                        return error.localizedDescription
+                    }
+                }
             }
             .alert("无法导出所选录音", isPresented: Binding(get: { exportError != nil }, set: { if !$0 { exportError = nil } })) {
                 Button("好") { exportError = nil }
@@ -182,6 +180,11 @@ struct ContentView: View {
     private func toggleSelection(_ item: Recording) {
         if selectedRecordingIDs.contains(item.id) { selectedRecordingIDs.remove(item.id) }
         else { selectedRecordingIDs.insert(item.id) }
+    }
+
+    private func requestDeletion(_ items: [Recording]) {
+        guard !items.isEmpty else { return }
+        pendingDeletion = DeletionRequest(items: items)
     }
 
     private enum BatchExportSelection {
@@ -222,6 +225,67 @@ struct ContentView: View {
         } catch {
             exportError = error.localizedDescription
         }
+    }
+}
+
+private struct DeletionRequest: Identifiable {
+    let id = UUID()
+    let items: [Recording]
+}
+
+private struct DeleteCopiesSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let recordingCount: Int
+    let filesCopyCount: Int
+    let iCloudCopyCount: Int
+    let onDelete: (Bool, Bool, Bool) -> String?
+
+    @State private var deleteFromList = true
+    @State private var deleteFilesCopy = false
+    @State private var deleteICloudCopy = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Toggle("录音列表中的副本（\(recordingCount)）", isOn: $deleteFromList)
+                    Toggle("“文件”里的本机副本（\(filesCopyCount)）", isOn: $deleteFilesCopy)
+                        .disabled(filesCopyCount == 0)
+                    Toggle("iCloud 已同步副本（\(iCloudCopyCount)）", isOn: $deleteICloudCopy)
+                        .disabled(iCloudCopyCount == 0)
+                } footer: {
+                    Text("只删除勾选的副本。若无法访问原 iCloud 文件夹，删除会停止并保留录音列表条目，方便重试。")
+                }
+            }
+            .navigationTitle("选择要删除的副本")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("删除", role: .destructive) {
+                        if let error = onDelete(deleteFromList, deleteFilesCopy, deleteICloudCopy) {
+                            errorMessage = error
+                        } else {
+                            dismiss()
+                        }
+                    }
+                    .disabled(!deleteFromList && !deleteFilesCopy && !deleteICloudCopy)
+                }
+            }
+            .alert("删除未完成", isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            )) {
+                Button("好") { errorMessage = nil }
+            } message: {
+                Text(errorMessage ?? "")
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 }
 

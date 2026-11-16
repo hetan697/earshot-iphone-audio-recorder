@@ -4,6 +4,7 @@ import Foundation
 /// the folder is complete (docs/CONTRACT.md, iCloud channel).
 enum Export {
     private static let failureFile = ".icloud-sync-error"
+    private static let deletedFile = ".icloud-copy-deleted"
     private static var bookmarkFile: URL {
         Store.recordings.deletingLastPathComponent().appendingPathComponent("export-folder.bookmark")
     }
@@ -40,6 +41,10 @@ enum Export {
         try? String(contentsOf: dir.appendingPathComponent(failureFile), encoding: .utf8)
     }
 
+    static func wasDeleted(in dir: URL) -> Bool {
+        FileManager.default.fileExists(atPath: dir.appendingPathComponent(deletedFile).path)
+    }
+
     /// Name the Mac sees: "2026-11-07 1033 现场对话".
     static func folderName(_ info: RecordingInfo) -> String {
         let f = DateFormatter()
@@ -52,6 +57,7 @@ enum Export {
     @discardableResult
     static func copy(_ dir: URL, _ info: RecordingInfo, allowWiFiOnly: Bool = true) -> Bool {
         guard info.state != .recording || info.isStale(), !info.tracks.isEmpty else { return false }
+        guard !wasDeleted(in: dir) else { return false }
         guard SyncPolicy.maySync else { return false }
         // The broadcast extension can outlive the app's last connectivity observation. In
         // Wi-Fi-only mode, only the foreground app may start an iCloud export.
@@ -89,7 +95,7 @@ enum Export {
             Store.notifyChanged()
             return false
         }
-        let marker = ["name": target.lastPathComponent]
+        let marker = ["name": target.lastPathComponent, "root": root.standardizedFileURL.path]
         do {
             let data = try JSONSerialization.data(withJSONObject: marker)
             try data.write(to: dir.appendingPathComponent("exported.json"), options: .atomic)
@@ -111,6 +117,53 @@ enum Export {
         try? FileManager.default.removeItem(at: dir.appendingPathComponent(failureFile))
     }
 
+    static func removeCopy(_ dir: URL) throws {
+        let markerURL = dir.appendingPathComponent("exported.json")
+        guard isExported(dir) else { return }
+        let markerData = try Data(contentsOf: markerURL)
+        guard let marker = try JSONSerialization.jsonObject(with: markerData) as? [String: String],
+              let name = marker["name"], !name.isEmpty,
+              URL(fileURLWithPath: name).lastPathComponent == name,
+              name != ".", name != ".." else {
+            throw NSError(domain: "Earshot", code: 6,
+                          userInfo: [NSLocalizedDescriptionKey: "无法读取 iCloud 副本位置"])
+        }
+        guard let picked = folder() else {
+            throw NSError(domain: "Earshot", code: 7,
+                          userInfo: [NSLocalizedDescriptionKey: "请先在设置中重新选择 iCloud 文件夹"])
+        }
+        let scoped = picked.startAccessingSecurityScopedResource()
+        defer { if scoped { picked.stopAccessingSecurityScopedResource() } }
+        let root = picked.lastPathComponent == "录音" ? picked : picked.appendingPathComponent("录音", isDirectory: true)
+        if let savedRoot = marker["root"],
+           URL(fileURLWithPath: savedRoot).standardizedFileURL != root.standardizedFileURL {
+            throw NSError(domain: "Earshot", code: 8,
+                          userInfo: [NSLocalizedDescriptionKey: "此录音同步到另一个 iCloud 文件夹；请先在设置中选回原文件夹再删除"])
+        }
+        let target = root.appendingPathComponent(name, isDirectory: true)
+        var coordinationError: NSError?
+        var removalError: Error?
+        NSFileCoordinator().coordinate(writingItemAt: target, options: .forDeleting, error: &coordinationError) { url in
+            do {
+                if FileManager.default.fileExists(atPath: url.path) {
+                    try FileManager.default.removeItem(at: url)
+                }
+            } catch {
+                removalError = error
+            }
+        }
+        if let removalError { throw removalError }
+        if let coordinationError { throw coordinationError }
+        try Data().write(to: dir.appendingPathComponent(deletedFile), options: .atomic)
+        try FileManager.default.removeItem(at: markerURL)
+        clearFailure(in: dir)
+        Store.notifyChanged()
+    }
+
+    static func allowCopyAgain(in dir: URL) {
+        try? FileManager.default.removeItem(at: dir.appendingPathComponent(deletedFile))
+    }
+
     /// Everything finished but not yet copied (the extension may not reach the folder, or none was picked then).
     static func copyPending() {
         guard folder() != nil, SyncPolicy.maySync else { return }
@@ -121,6 +174,7 @@ enum Export {
 /// A second copy under Documents is visible in Files > On My iPhone > Earshot.
 enum LocalArchive {
     private static let failureFile = ".files-copy-error"
+    private static let deletedFile = ".files-copy-deleted"
     static var root: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Earshot", isDirectory: true)
@@ -142,6 +196,10 @@ enum LocalArchive {
         try? String(contentsOf: dir.appendingPathComponent(failureFile), encoding: .utf8)
     }
 
+    static func wasDeleted(in dir: URL) -> Bool {
+        FileManager.default.fileExists(atPath: dir.appendingPathComponent(deletedFile).path)
+    }
+
     static func hasCopy(_ info: RecordingInfo) -> Bool {
         let directory = recordingDirectory(info)
         return FileManager.default.fileExists(atPath: directory.appendingPathComponent("info.json").path)
@@ -150,15 +208,27 @@ enum LocalArchive {
             }
     }
 
-    static func removeCopy(_ info: RecordingInfo) throws {
+    static func hasAnyCopy(_ info: RecordingInfo) -> Bool {
+        FileManager.default.fileExists(atPath: recordingDirectory(info).path)
+    }
+
+    static func removeCopy(_ info: RecordingInfo, suppressingFutureCopyAt sourceDir: URL? = nil) throws {
         let directory = recordingDirectory(info)
         if FileManager.default.fileExists(atPath: directory.path) {
             try FileManager.default.removeItem(at: directory)
         }
+        if let sourceDir {
+            try Data().write(to: sourceDir.appendingPathComponent(deletedFile), options: .atomic)
+        }
+    }
+
+    static func allowCopyAgain(in dir: URL) {
+        try? FileManager.default.removeItem(at: dir.appendingPathComponent(deletedFile))
     }
 
     static func copy(_ dir: URL, _ info: RecordingInfo) {
         guard info.state != .recording || info.isStale(), !info.tracks.isEmpty else { return }
+        guard !wasDeleted(in: dir) else { return }
         let fm = FileManager.default
         let target = recordingDirectory(info)
         do {
