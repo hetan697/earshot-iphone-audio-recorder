@@ -44,6 +44,8 @@ The app's interface is in Chinese; this README explains every control.
   (about 29 MB per hour), so a killed recording keeps all but the last seconds.
 - **Lands on your Mac by itself.** Each recording is copied to an iCloud Drive folder you pick; the Mac sync also
   works over the local network with `xcrun devicectl`.
+- **Balance the two tracks.** Phone sound and microphone rarely arrive at the same level; the detail screen has a
+  gain slider for each (−24 to +12 dB). Playback and the shared file both use it, and the setting sticks to the recording.
 - **Summaries that fit the scene.** Conversations get *who said what / agreements / to-dos*; videos and live
   streams get *what was covered / quotes worth keeping*; online meetings and calls are detected as such.
 

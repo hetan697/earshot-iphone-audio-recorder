@@ -11,6 +11,7 @@ iPhone App `Earshot`（bundle `<prefix>.earshot`，prefix 见 config.example.env
 Library/Recordings/<id>/info.json      手机写：录音元数据（见下）
 Library/Recordings/<id>/app.m4a        手机写：手机播放出来的声音（AAC，单声道）；可能不存在
 Library/Recordings/<id>/mic.m4a        手机写：麦克风（用户在录屏面板里打开麦克风时才有）；可能不存在
+Library/Recordings/<id>/levels.json    手机写：两轨音量（App 本地用，不参与交换）
 Library/Recordings/<id>/mac.json       Mac 写：{"version":1,"syncedAt":ISO8601,"title":"短标题"}
 Library/Recordings/<id>/summary.md     Mac 写：纪要
 Library/Recordings/<id>/transcript.md  Mac 写：带时间戳的文字稿

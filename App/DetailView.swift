@@ -5,6 +5,12 @@ import Combine
 struct DetailView: View {
     let item: Recording
     @State private var tab = 0
+    @State private var levels: MixLevels
+
+    init(item: Recording) {
+        self.item = item
+        _levels = State(initialValue: MixLevels.load(item.dir))
+    }
 
     private var summary: String? { item.text("summary.md") }
     private var transcript: String? { item.text("transcript.md") }
@@ -21,8 +27,26 @@ struct DetailView: View {
                 if item.isLive {
                     Label("正在录音，停止后才能播放", systemImage: "waveform").foregroundStyle(.red)
                 } else if !item.info.tracks.isEmpty {
-                    Player(item: item)
+                    Player(item: item, levels: levels)
                 }
+            }
+
+            if !item.isLive && !item.info.tracks.isEmpty {
+                Section {
+                    LevelSlider(title: "手机声音", db: $levels.app)
+                    LevelSlider(title: "麦克风", db: $levels.mic)
+                    if !levels.isNeutral {
+                        Button("重置音量") {
+                            levels = .neutral
+                            levels.save(to: item.dir)
+                        }
+                    }
+                } header: {
+                    Text("音量")
+                } footer: {
+                    Text("两轨听感不一样时在这里调：0 dB 是原始音量，可调 −24 到 +12 dB。播放和分享的文件都按这个比例混合，调整会跟着这条录音保存。")
+                }
+                .onChange(of: levels) { _, new in new.save(to: item.dir) }
             }
 
             if summary != nil || transcript != nil {
@@ -45,17 +69,40 @@ struct DetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if !item.isLive && !item.info.tracks.isEmpty {
-                ShareLink(item: SharedAudio(item: item),
+                ShareLink(item: SharedAudio(item: item, levels: levels),
                           preview: SharePreview("\(item.title).m4a", image: Image(systemName: "waveform")))
             }
         }
     }
 }
 
+/// One track's gain: a dB slider with its current value.
+private struct LevelSlider: View {
+    let title: String
+    @Binding var db: Double
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(MixLevels.label(db)).monospacedDigit().foregroundStyle(.secondary)
+            }
+            .font(.subheadline)
+            Slider(value: $db, in: MixLevels.range, step: 1)
+                .accessibilityLabel(title)
+                .accessibilityValue(MixLevels.label(db))
+        }
+        .padding(.vertical, 2)
+    }
+}
+
 /// Play / pause, scrub, ±15 s over the aligned phone-audio and microphone tracks.
 private struct Player: View {
     let item: Recording
+    var levels: MixLevels = .neutral
     @State private var player: AVPlayer?
+    @State private var tracks: AudioMix.Tracks?
     @State private var playing = false
     @State private var position: Double = 0
     @State private var scrubbing = false
@@ -85,7 +132,15 @@ private struct Player: View {
         }
         .padding(.vertical, 4)
         .task(id: item.id) {
-            if let comp = try? await AudioMix.composition(item) { player = AVPlayer(playerItem: AVPlayerItem(asset: comp)) }
+            guard let built = try? await AudioMix.composition(item) else { return }
+            tracks = built
+            let playerItem = AVPlayerItem(asset: built.composition)
+            playerItem.audioMix = AudioMix.audioMix(built, levels: levels)
+            player = AVPlayer(playerItem: playerItem)
+        }
+        .onChange(of: levels) { _, new in
+            guard let tracks else { return }
+            player?.currentItem?.audioMix = AudioMix.audioMix(tracks, levels: new)
         }
         .onReceive(tick) { _ in
             guard let player, !scrubbing else { return }
