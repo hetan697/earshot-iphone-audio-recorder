@@ -37,6 +37,9 @@ Read `docs/CONTRACT.md` before changing anything the phone and the Mac exchange.
   balancing or manually selected per-track gains. A settings signature beside the mix makes existing
   mixes regenerate when this preference changes. Apply peak headroom in automatic mode; never replace
   the source tracks with this convenience mix.
+- The recording detail preview has its own automatic/manual balance switch. The export menu offers
+  the original phone-audio track, the microphone track, or a mixed file using that recording's saved
+  manual gains; automatic preview must not silently change the explicit manual-export choice.
 - If changing how recordings cross between the phone and Mac, update `docs/CONTRACT.md` and preserve
   its rule that audio is never uploaded by custom phone networking.
 

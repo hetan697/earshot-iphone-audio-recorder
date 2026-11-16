@@ -59,6 +59,27 @@ enum AudioMix {
         return out
     }
 
+    static func exportTrack(_ item: Recording, key: String) async throws -> URL {
+        guard let track = item.info.tracks[key] else { throw NSError(domain: "Earshot", code: 4) }
+        let asset = AVURLAsset(url: item.dir.appendingPathComponent(track.file))
+        let name = "\(item.title) \(key == "app" ? "手机声音" : "麦克风") \(item.id).m4a"
+            .replacingOccurrences(of: "/", with: "-")
+        let out = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        try? FileManager.default.removeItem(at: out)
+        guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else {
+            throw NSError(domain: "Earshot", code: 3)
+        }
+        session.outputURL = out
+        session.outputFileType = .m4a
+        await session.export()
+        if let error = session.error { throw error }
+        return out
+    }
+
+    static func automaticLevels(for item: Recording) throws -> MixLevels {
+        try balancedLevels(item)
+    }
+
     /// Creates an automatic level-balanced file for the Files archive. Each source is sampled at
     /// regular points through the recording, then track gains bring their average loudness closer
     /// together while leaving headroom for peaks when both tracks overlap.
@@ -136,11 +157,20 @@ enum AudioMix {
 
 /// Shared from the detail screen: the mixed file is only made when the person actually shares.
 struct SharedAudio: Transferable {
+    enum Selection { case phone, microphone, manual }
     let item: Recording
+    var selection: Selection = .manual
     var levels: MixLevels = .neutral
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(exportedContentType: .mpeg4Audio) {
-            SentTransferredFile(try await AudioMix.export($0.item, levels: $0.levels))
+            let audio = $0
+            let url: URL
+            switch audio.selection {
+            case .phone: url = try await AudioMix.exportTrack(audio.item, key: "app")
+            case .microphone: url = try await AudioMix.exportTrack(audio.item, key: "mic")
+            case .manual: url = try await AudioMix.export(audio.item, levels: audio.levels)
+            }
+            return SentTransferredFile(url)
         }
     }
 }

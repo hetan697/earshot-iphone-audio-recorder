@@ -6,11 +6,17 @@ struct DetailView: View {
     let item: Recording
     @State private var tab = 0
     @State private var levels: MixLevels
+    @State private var automaticBalance: Bool
+    @State private var automaticLevels = MixLevels.neutral
 
     init(item: Recording) {
         self.item = item
         _levels = State(initialValue: MixLevels.load(item.dir))
+        _automaticBalance = State(initialValue: MixPreference.load().mode == .automatic)
     }
+
+    private var hasTwoTracks: Bool { item.info.tracks["app"] != nil && item.info.tracks["mic"] != nil }
+    private var previewLevels: MixLevels { automaticBalance && hasTwoTracks ? automaticLevels : levels }
 
     private var summary: String? { item.text("summary.md") }
     private var transcript: String? { item.text("transcript.md") }
@@ -27,24 +33,38 @@ struct DetailView: View {
                 if item.isLive {
                     Label("正在录音，停止后才能播放", systemImage: "waveform").foregroundStyle(.red)
                 } else if !item.info.tracks.isEmpty {
-                    Player(item: item, levels: levels)
+                    Player(item: item, levels: previewLevels)
                 }
             }
 
             if !item.isLive && !item.info.tracks.isEmpty {
                 Section {
-                    LevelSlider(title: "手机声音", db: $levels.app)
-                    LevelSlider(title: "麦克风", db: $levels.mic)
-                    if !levels.isNeutral {
-                        Button("重置音量") {
-                            levels = .neutral
-                            levels.save(to: item.dir)
+                    if hasTwoTracks {
+                        Picker("音量均衡", selection: $automaticBalance) {
+                            Text("自动").tag(true)
+                            Text("手动").tag(false)
                         }
+                        .pickerStyle(.segmented)
+                    }
+                    if !automaticBalance || !hasTwoTracks {
+                        LevelSlider(title: "手机声音", db: $levels.app)
+                        LevelSlider(title: "麦克风", db: $levels.mic)
+                        if !levels.isNeutral {
+                            Button("重置音量") {
+                                levels = .neutral
+                                levels.save(to: item.dir)
+                            }
+                        }
+                    } else {
+                        Label("预览已按两轨响度自动均衡", systemImage: "slider.horizontal.3")
+                            .font(.subheadline).foregroundStyle(.secondary)
                     }
                 } header: {
                     Text("音量")
                 } footer: {
-                    Text("两轨听感不一样时在这里调：0 dB 是原始音量，可调 −24 到 +12 dB。播放和分享的文件都按这个比例混合，调整会跟着这条录音保存。")
+                    Text(automaticBalance && hasTwoTracks
+                         ? "预览会自动均衡两轨。切换到手动可调整本条录音的音量；0 dB 是原始音量，可调 −24 到 +12 dB。手动导出选项始终使用这里保存的手动音量。"
+                         : "0 dB 是原始音量，可调 −24 到 +12 dB。手动音量会跟着这条录音保存，并用于「按手动设置导出」。")
                 }
                 .onChange(of: levels) { _, new in new.save(to: item.dir) }
             }
@@ -67,11 +87,44 @@ struct DetailView: View {
         }
         .navigationTitle(item.title)
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: item.id) { await loadAutomaticLevels() }
+        .onChange(of: automaticBalance) { _, enabled in
+            if enabled { Task { await loadAutomaticLevels() } }
+        }
         .toolbar {
             if !item.isLive && !item.info.tracks.isEmpty {
-                ShareLink(item: SharedAudio(item: item, levels: levels),
-                          preview: SharePreview("\(item.title).m4a", image: Image(systemName: "waveform")))
+                Menu {
+                    if item.info.tracks["app"] != nil {
+                        ShareLink(item: SharedAudio(item: item, selection: .phone),
+                                  preview: SharePreview("手机声音 \(item.id).m4a", image: Image(systemName: "iphone.radiowaves.left.and.right"))) {
+                            Label("导出手机声音", systemImage: "iphone.radiowaves.left.and.right")
+                        }
+                    }
+                    if item.info.tracks["mic"] != nil {
+                        ShareLink(item: SharedAudio(item: item, selection: .microphone),
+                                  preview: SharePreview("麦克风 \(item.id).m4a", image: Image(systemName: "mic"))) {
+                            Label("导出麦克风", systemImage: "mic")
+                        }
+                    }
+                    ShareLink(item: SharedAudio(item: item, selection: .manual, levels: levels),
+                              preview: SharePreview("\(item.title) 手动混音.m4a", image: Image(systemName: "waveform"))) {
+                        Label("按手动设置导出", systemImage: "slider.horizontal.3")
+                    }
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .accessibilityLabel("导出音频")
             }
+        }
+    }
+
+    private func loadAutomaticLevels() async {
+        guard hasTwoTracks else { return }
+        let recording = item
+        if let calculated = try? await Task.detached(priority: .utility, operation: {
+            try AudioMix.automaticLevels(for: recording)
+        }).value {
+            automaticLevels = calculated
         }
     }
 }
