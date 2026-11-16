@@ -143,17 +143,15 @@ struct ContentView: View {
             }
             .confirmationDialog("选择导出内容", isPresented: $choosingExportType,
                                 titleVisibility: .visible) {
-                if selectedItems.contains(where: { $0.info.tracks["app"] != nil }) {
-                    Button("导出手机声音") { Task { await exportSelected(.phone) } }
-                }
-                if selectedItems.contains(where: { $0.info.tracks["mic"] != nil }) {
-                    Button("导出麦克风") { Task { await exportSelected(.microphone) } }
-                }
+                Button("导出手机声音") { Task { await exportSelected(.phone) } }
+                    .disabled(!selectedItems.contains(where: { $0.info.tracks["app"] != nil }))
+                Button("导出麦克风") { Task { await exportSelected(.microphone) } }
+                    .disabled(!selectedItems.contains(where: { $0.info.tracks["mic"] != nil }))
                 Button("按自动均衡导出") { Task { await exportSelected(.automatic) } }
                 Button("按手动设置导出") { Task { await exportSelected(.manual) } }
                 Button("取消", role: .cancel) {}
             } message: {
-                Text("只会导出所选录音中包含相应音轨的项目。")
+                Text("灰色选项表示所选录音没有对应音轨。选择多条时，只导出含对应音轨的录音。")
             }
             .onChange(of: library.items) { _, items in
                 selectedRecordingIDs.formIntersection(Set(items.map(\.id)))
