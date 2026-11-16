@@ -124,6 +124,8 @@ private struct SyncSettingsView: View {
                 }
                 .pickerStyle(.segmented)
                 LabeledContent("当前网络", value: networkDescription)
+            } header: {
+                Text("iCloud 同步")
             } footer: {
                 Text(syncDescription)
             }
