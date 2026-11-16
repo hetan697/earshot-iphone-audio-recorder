@@ -37,16 +37,15 @@ struct DetailView: View {
                 }
             }
 
-            if !item.isLive && !item.info.tracks.isEmpty {
+            if !item.isLive && hasTwoTracks {
                 Section {
-                    if hasTwoTracks {
-                        Picker("音量均衡", selection: $automaticBalance) {
-                            Text("自动").tag(true)
-                            Text("手动").tag(false)
-                        }
-                        .pickerStyle(.segmented)
+                    Picker("音量均衡", selection: $automaticBalance) {
+                        Text("自动").tag(true)
+                        Text("手动").tag(false)
                     }
-                    if !automaticBalance || !hasTwoTracks {
+                    .pickerStyle(.segmented)
+
+                    if !automaticBalance {
                         LevelSlider(title: "手机声音", db: $levels.app)
                         LevelSlider(title: "麦克风", db: $levels.mic)
                         if !levels.isNeutral {

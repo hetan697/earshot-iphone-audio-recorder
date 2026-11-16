@@ -149,6 +149,7 @@ struct ContentView: View {
                 if selectedItems.contains(where: { $0.info.tracks["mic"] != nil }) {
                     Button("导出麦克风") { Task { await exportSelected(.microphone) } }
                 }
+                Button("按自动均衡导出") { Task { await exportSelected(.automatic) } }
                 Button("按手动设置导出") { Task { await exportSelected(.manual) } }
                 Button("取消", role: .cancel) {}
             } message: {
@@ -185,8 +186,12 @@ struct ContentView: View {
         else { selectedRecordingIDs.insert(item.id) }
     }
 
+    private enum BatchExportSelection {
+        case phone, microphone, automatic, manual
+    }
+
     @MainActor
-    private func exportSelected(_ selection: SharedAudio.Selection) async {
+    private func exportSelected(_ selection: BatchExportSelection) async {
         isExporting = true
         defer { isExporting = false }
         do {
@@ -199,6 +204,16 @@ struct ContentView: View {
                 case .microphone:
                     guard item.info.tracks["mic"] != nil else { continue }
                     files.append(try await AudioMix.exportTrack(item, key: "mic"))
+                case .automatic:
+                    let levels: MixLevels
+                    if item.info.tracks["app"] != nil, item.info.tracks["mic"] != nil {
+                        levels = try await Task.detached(priority: .utility) {
+                            try AudioMix.automaticLevels(for: item)
+                        }.value
+                    } else {
+                        levels = .neutral
+                    }
+                    files.append(try await AudioMix.export(item, levels: levels))
                 case .manual:
                     let levels = MixLevels.load(item.dir)
                     files.append(try await AudioMix.export(item, levels: levels))
@@ -277,7 +292,6 @@ private struct SyncSettingsView: View {
                     Text("仅 Wi-Fi").tag(SyncPolicy.Mode.wifiOnly)
                 }
                 .pickerStyle(.navigationLink)
-                LabeledContent("当前网络", value: networkDescription)
             } header: {
                 Text("iCloud 同步")
             } footer: {
@@ -356,12 +370,6 @@ private struct SyncSettingsView: View {
         mixPreference.levels = mixPreference.levels.clamped()
         mixPreference.save()
         library.reload()
-    }
-
-    private var networkDescription: String {
-        guard connectivity.pathResolved else { return "检测中" }
-        if connectivity.onWiFi { return "Wi-Fi" }
-        return connectivity.isConnected ? "蜂窝网络" : "无网络"
     }
 
     private var actionButtonDescription: String {
