@@ -1,17 +1,21 @@
 import SwiftUI
+import UIKit
 
 struct ContentView: View {
     @EnvironmentObject private var library: Library
-    @Environment(\.editMode) private var editMode
     @State private var pendingDelete: Recording?
     @State private var selectedRecordingIDs = Set<String>()
+    @State private var isSelecting = false
     @State private var confirmingBulkDelete = false
+    @State private var isExporting = false
+    @State private var exportFiles: [URL] = []
+    @State private var exportError: String?
     @State private var standby = Standby.enabled
     @State private var path: [String] = []
 
     var body: some View {
         NavigationStack(path: $path) {
-            List(selection: $selectedRecordingIDs) {
+            List {
                 Section {
                     RecordControls(broadcast: library.liveBroadcast)
                         .listRowInsets(EdgeInsets())
@@ -41,10 +45,22 @@ struct ContentView: View {
                 } else {
                     Section("录音") {
                         ForEach(library.items) { item in
-                            NavigationLink(value: item.id) { Row(item: item) }
-                                .swipeActions {
-                                    Button("删除", role: .destructive) { pendingDelete = item }
+                            if isSelecting {
+                                Button { toggleSelection(item) } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: selectedRecordingIDs.contains(item.id) ? "checkmark.circle.fill" : "circle")
+                                            .foregroundStyle(selectedRecordingIDs.contains(item.id) ? Color.accentColor : .secondary)
+                                        Row(item: item)
+                                    }
                                 }
+                                .buttonStyle(.plain)
+                                .disabled(item.isLive || item.info.tracks.isEmpty)
+                            } else {
+                                NavigationLink(value: item.id) { Row(item: item) }
+                                    .swipeActions {
+                                        Button("删除", role: .destructive) { pendingDelete = item }
+                                    }
+                            }
                         }
                     }
                 }
@@ -53,13 +69,16 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItemGroup(placement: .topBarLeading) {
                     if !library.items.isEmpty {
-                        EditButton()
-                        if editMode?.wrappedValue == .active {
-                            Button(selectedRecordingIDs.count == library.items.count ? "取消全选" : "全选") {
-                                if selectedRecordingIDs.count == library.items.count {
+                        Button(isSelecting ? "完成" : "选择") {
+                            isSelecting.toggle()
+                            selectedRecordingIDs.removeAll()
+                        }
+                        if isSelecting {
+                            Button(allSelectableItemsSelected ? "取消全选" : "全选") {
+                                if allSelectableItemsSelected {
                                     selectedRecordingIDs.removeAll()
                                 } else {
-                                    selectedRecordingIDs = Set(library.items.map(\.id))
+                                    selectedRecordingIDs = Set(selectableItems.map(\.id))
                                 }
                             }
                         }
@@ -69,10 +88,19 @@ struct ContentView: View {
                     NavigationLink(value: "settings") { Image(systemName: "gearshape") }
                         .accessibilityLabel("设置")
                 }
-                if editMode?.wrappedValue == .active, !selectedRecordingIDs.isEmpty {
-                    ToolbarItem(placement: .bottomBar) {
-                        Button("删除所选（\(selectedRecordingIDs.count)）", role: .destructive) {
+                if isSelecting, !selectedRecordingIDs.isEmpty {
+                    ToolbarItemGroup(placement: .bottomBar) {
+                        Button {
+                            Task { await exportSelected() }
+                        } label: {
+                            Label(isExporting ? "正在准备" : "导出（\(selectedRecordingIDs.count)）", systemImage: "square.and.arrow.up")
+                        }
+                        .disabled(isExporting)
+                        Spacer()
+                        Button(role: .destructive) {
                             confirmingBulkDelete = true
+                        } label: {
+                            Label("删除（\(selectedRecordingIDs.count)）", systemImage: "trash")
                         }
                     }
                 }
@@ -107,7 +135,7 @@ struct ContentView: View {
                 Button("删除 \(selectedRecordingIDs.count) 条录音", role: .destructive) {
                     library.delete(ids: selectedRecordingIDs)
                     selectedRecordingIDs.removeAll()
-                    editMode?.wrappedValue = .inactive
+                    isSelecting = false
                 }
             } message: {
                 Text("只删除手机上的所选录音；已经同步到 iCloud 的文件不受影响。")
@@ -115,8 +143,68 @@ struct ContentView: View {
             .onChange(of: library.items) { _, items in
                 selectedRecordingIDs.formIntersection(Set(items.map(\.id)))
             }
+            .sheet(isPresented: Binding(get: { !exportFiles.isEmpty }, set: { if !$0 { exportFiles = [] } })) {
+                ActivityShareSheet(activityItems: exportFiles)
+            }
+            .alert("无法导出所选录音", isPresented: Binding(get: { exportError != nil }, set: { if !$0 { exportError = nil } })) {
+                Button("好") { exportError = nil }
+            } message: {
+                Text(exportError ?? "")
+            }
         }
     }
+
+    private var selectableItems: [Recording] {
+        library.items.filter { !$0.isLive && !$0.info.tracks.isEmpty }
+    }
+
+    private var allSelectableItemsSelected: Bool {
+        !selectableItems.isEmpty && selectedRecordingIDs == Set(selectableItems.map(\.id))
+    }
+
+    private func toggleSelection(_ item: Recording) {
+        if selectedRecordingIDs.contains(item.id) { selectedRecordingIDs.remove(item.id) }
+        else { selectedRecordingIDs.insert(item.id) }
+    }
+
+    @MainActor
+    private func exportSelected() async {
+        isExporting = true
+        defer { isExporting = false }
+        do {
+            let preference = MixPreference.load()
+            let selectedItems = library.items.filter { selectedRecordingIDs.contains($0.id) && !$0.isLive && !$0.info.tracks.isEmpty }
+            var files: [URL] = []
+            for item in selectedItems {
+                let levels: MixLevels
+                if preference.mode == .automatic, item.info.tracks["app"] != nil, item.info.tracks["mic"] != nil {
+                    levels = try await Task.detached(priority: .utility) { try AudioMix.automaticLevels(for: item) }.value
+                } else {
+                    levels = MixLevels.load(item.dir)
+                }
+                files.append(try await AudioMix.export(item, levels: levels))
+            }
+            guard !files.isEmpty else { return }
+            exportFiles = files
+        } catch {
+            exportError = error.localizedDescription
+        }
+    }
+}
+
+private struct ActivityShareSheet: UIViewControllerRepresentable {
+    let activityItems: [URL]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let controller = UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+        controller.popoverPresentationController?.sourceView = controller.view
+        controller.popoverPresentationController?.sourceRect = CGRect(x: controller.view.bounds.midX,
+                                                                       y: controller.view.bounds.midY,
+                                                                       width: 0, height: 0)
+        return controller
+    }
+
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
 private struct SyncSettingsView: View {
