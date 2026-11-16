@@ -3,9 +3,6 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var library: Library
     @State private var pendingDelete: Recording?
-    @State private var pickingFolder = false
-    @State private var exportFolder = Export.folderDisplayName
-    @State private var standby = Standby.enabled
     @State private var path: [String] = []
 
     var body: some View {
@@ -16,33 +13,7 @@ struct ContentView: View {
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
                 } footer: {
-                    Text("现场对话：用麦克风录身边的人说话。手机声音：录正在播放的视频、直播、会议、通话，只录声音不存画面；想把自己说的话也录进去，在弹出的面板里打开麦克风。")
-                }
-
-                Section {
-                    Button { pickingFolder = true } label: {
-                        LabeledContent("存到 iCloud", value: exportFolder ?? "未选择")
-                    }
-                    NavigationLink("设置 Action Button", value: "help")
-                    Toggle("待命模式", isOn: Binding(get: { standby }, set: { standby = $0; Standby.enabled = $0 }))
-                    if standby {
-                        TimelineView(.periodic(from: .now, by: 2)) { _ in
-                            if Standby.isRunning {
-                                Label(Standby.armed ? "待命中 · 正在录" : "待命中：按 Action Button 开始录",
-                                      systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-                            } else {
-                                Button("开启待命（点一次「开始直播」）") { AppState.shared.picker.tap() }
-                            }
-                        }
-                    }
-                } footer: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(exportFolder == nil
-                             ? "选 iCloud 云盘里一个和 Mac 共享的文件夹，录音会自动存进它的「录音」子文件夹，Mac 不在家也能收到并写好纪要。"
-                             : "录完自动存进去；Mac 写好的纪要和文字稿会出现在同一个文件夹里。")
-                        Text("本机副本在「文件」→「我的 iPhone」→「Earshot」；同时录到手机声音和麦克风时，还会生成音量均衡后的 balanced.m4a。")
-                        Text("待命模式：录屏只开一次、一直在后台等着（不存任何声音，顶上红点常亮），之后看视频、直播时按一下 Action Button 就开始录，不用再点「开始直播」。")
-                    }
+                    Text("现场对话：用麦克风录身边的人说话。手机声音：录正在播放的视频、直播、会议、通话，只录声音不存画面；想把自己说的话也录进去，在弹出的面板里打开麦克风。本机副本可在「文件」→「我的 iPhone」→「Earshot」查看；双音轨录音还会生成音量均衡后的 balanced.m4a。")
                 }
 
                 if library.items.isEmpty {
@@ -80,13 +51,6 @@ struct ContentView: View {
                 if args.contains("-EarshotDemoHelp") { path = ["help"] }
             }
             .refreshable { library.reload() }
-            .fileImporter(isPresented: $pickingFolder, allowedContentTypes: [.folder]) { result in
-                guard case .success(let url) = result else { return }
-                try? Export.setFolder(url)
-                exportFolder = Export.folderDisplayName
-                if Connectivity.shared.maySyncNow { Export.copyPending() }
-                library.reload()
-            }
             .confirmationDialog("删除这条录音？", isPresented: Binding(get: { pendingDelete != nil },
                                                                  set: { if !$0 { pendingDelete = nil } }),
                                 titleVisibility: .visible) {
@@ -107,6 +71,9 @@ private struct SyncSettingsView: View {
     @State private var iCloudSyncMode = SyncPolicy.mode
     @State private var mixPreference = MixPreference.load()
     @State private var actionButtonMode = ActionButtonPreference.mode
+    @State private var standby = Standby.enabled
+    @State private var pickingFolder = false
+    @State private var exportFolder = Export.folderDisplayName
 
     var body: some View {
         Form {
@@ -126,10 +93,30 @@ private struct SyncSettingsView: View {
             } header: {
                 Text("Action Button")
             } footer: {
-                Text(actionButtonDescription)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(actionButtonDescription)
+                    Text("待命模式会让录屏会话常驻；开始前仍需在系统面板点一次「开始直播」。")
+                    NavigationLink("如何设置 iPhone 操作按钮") { ActionButtonHelp() }
+                }
+            }
+            Section {
+                Toggle("待命模式", isOn: Binding(get: { standby }, set: { standby = $0; Standby.enabled = $0 }))
+                if standby {
+                    TimelineView(.periodic(from: .now, by: 2)) { _ in
+                        if Standby.isRunning {
+                            Label(Standby.armed ? "待命中 · 正在录" : "待命中：按 Action Button 开始录",
+                                  systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                        } else {
+                            Button("开启待命（点一次「开始直播」）") { AppState.shared.picker.tap() }
+                        }
+                    }
+                }
             }
 
             Section {
+                Button { pickingFolder = true } label: {
+                    LabeledContent("iCloud 文件夹", value: exportFolder ?? "未选择")
+                }
                 Picker("同步至 iCloud", selection: Binding(
                     get: { iCloudSyncMode },
                     set: { mode in
@@ -192,6 +179,13 @@ private struct SyncSettingsView: View {
         }
         .navigationTitle("设置")
         .navigationBarTitleDisplayMode(.inline)
+        .fileImporter(isPresented: $pickingFolder, allowedContentTypes: [.folder]) { result in
+            guard case .success(let url) = result else { return }
+            try? Export.setFolder(url)
+            exportFolder = Export.folderDisplayName
+            if connectivity.maySyncNow { Export.copyPending() }
+            library.reload()
+        }
     }
 
     private func mixSlider(_ title: String, value: Binding<Double>) -> some View {
