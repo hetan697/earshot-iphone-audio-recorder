@@ -3,6 +3,7 @@ import Foundation
 /// Copies finished recordings into a folder the person picked once in iCloud Drive. Audio first, info.json last: once info.json is there,
 /// the folder is complete (docs/CONTRACT.md, iCloud channel).
 enum Export {
+    private static let failureFile = ".icloud-sync-error"
     private static var bookmarkFile: URL {
         Store.recordings.deletingLastPathComponent().appendingPathComponent("export-folder.bookmark")
     }
@@ -35,6 +36,10 @@ enum Export {
         FileManager.default.fileExists(atPath: dir.appendingPathComponent("exported.json").path)
     }
 
+    static func failureMessage(in dir: URL) -> String? {
+        try? String(contentsOf: dir.appendingPathComponent(failureFile), encoding: .utf8)
+    }
+
     /// Name the Mac sees: "2026-11-07 1033 现场对话".
     static func folderName(_ info: RecordingInfo) -> String {
         let f = DateFormatter()
@@ -51,7 +56,10 @@ enum Export {
         // The broadcast extension can outlive the app's last connectivity observation. In
         // Wi-Fi-only mode, only the foreground app may start an iCloud export.
         guard SyncPolicy.mode != .wifiOnly || allowWiFiOnly else { return false }
-        if isExported(dir) { return true }
+        if isExported(dir) {
+            clearFailure(in: dir)
+            return true
+        }
         guard let picked = folder() else { return false }
         let scoped = picked.startAccessingSecurityScopedResource()
         defer { if scoped { picked.stopAccessingSecurityScopedResource() } }
@@ -61,6 +69,7 @@ enum Export {
         if fm.fileExists(atPath: target.path) { target = root.appendingPathComponent("\(folderName(info)) \(info.id)") }
 
         var ok = true
+        var copyError: String?
         var failure: NSError?
         NSFileCoordinator().coordinate(writingItemAt: target, options: [], error: &failure) { url in
             do {
@@ -71,13 +80,35 @@ enum Export {
                 try fm.copyItem(at: dir.appendingPathComponent("info.json"), to: url.appendingPathComponent("info.json"))
             } catch {
                 ok = false
+                copyError = error.localizedDescription
                 try? fm.removeItem(at: url)                    // never leave a half folder for the Mac
             }
         }
-        guard ok, failure == nil else { return false }
+        guard ok, failure == nil else {
+            saveFailure(copyError ?? failure?.localizedDescription ?? "无法复制到 iCloud 文件夹", in: dir)
+            Store.notifyChanged()
+            return false
+        }
         let marker = ["name": target.lastPathComponent]
-        try? JSONSerialization.data(withJSONObject: marker).write(to: dir.appendingPathComponent("exported.json"))
+        do {
+            let data = try JSONSerialization.data(withJSONObject: marker)
+            try data.write(to: dir.appendingPathComponent("exported.json"), options: .atomic)
+            clearFailure(in: dir)
+        } catch {
+            saveFailure(error.localizedDescription, in: dir)
+            Store.notifyChanged()
+            return false
+        }
+        Store.notifyChanged()
         return true
+    }
+
+    private static func saveFailure(_ message: String, in dir: URL) {
+        try? message.write(to: dir.appendingPathComponent(failureFile), atomically: true, encoding: .utf8)
+    }
+
+    private static func clearFailure(in dir: URL) {
+        try? FileManager.default.removeItem(at: dir.appendingPathComponent(failureFile))
     }
 
     /// Everything finished but not yet copied (the extension may not reach the folder, or none was picked then).
@@ -89,6 +120,7 @@ enum Export {
 
 /// A second copy under Documents is visible in Files > On My iPhone > Earshot.
 enum LocalArchive {
+    private static let failureFile = ".files-copy-error"
     static var root: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Earshot", isDirectory: true)
@@ -104,6 +136,25 @@ enum LocalArchive {
 
     static func balancedMixPreferenceURL(_ info: RecordingInfo) -> URL {
         recordingDirectory(info).appendingPathComponent(".balanced-settings.json")
+    }
+
+    static func failureMessage(in dir: URL) -> String? {
+        try? String(contentsOf: dir.appendingPathComponent(failureFile), encoding: .utf8)
+    }
+
+    static func hasCopy(_ info: RecordingInfo) -> Bool {
+        let directory = recordingDirectory(info)
+        return FileManager.default.fileExists(atPath: directory.appendingPathComponent("info.json").path)
+            && info.tracks.values.allSatisfy {
+                FileManager.default.fileExists(atPath: directory.appendingPathComponent($0.file).path)
+            }
+    }
+
+    static func removeCopy(_ info: RecordingInfo) throws {
+        let directory = recordingDirectory(info)
+        if FileManager.default.fileExists(atPath: directory.path) {
+            try FileManager.default.removeItem(at: directory)
+        }
     }
 
     static func copy(_ dir: URL, _ info: RecordingInfo) {
@@ -123,6 +174,9 @@ enum LocalArchive {
                 let destination = target.appendingPathComponent(name)
                 if fm.fileExists(atPath: source.path) { try? fm.removeItem(at: destination); try fm.copyItem(at: source, to: destination) }
             }
-        } catch { /* Keep the App Group recording as the authoritative copy. */ }
+            try? FileManager.default.removeItem(at: dir.appendingPathComponent(failureFile))
+        } catch {
+            try? error.localizedDescription.write(to: dir.appendingPathComponent(failureFile), atomically: true, encoding: .utf8)
+        }
     }
 }

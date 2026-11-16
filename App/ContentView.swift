@@ -58,6 +58,16 @@ struct ContentView: View {
                                 .disabled(item.isLive || item.info.tracks.isEmpty)
                             } else {
                                 NavigationLink(value: item.id) { Row(item: item) }
+                                    .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                                        if hasTransferFailure(item) {
+                                            Button {
+                                                library.retryCopies(item)
+                                            } label: {
+                                                Label("重试复制", systemImage: "arrow.clockwise")
+                                            }
+                                            .tint(.blue)
+                                        }
+                                    }
                                     .swipeActions {
                                         Button("删除", role: .destructive) { pendingDelete = item }
                                     }
@@ -124,22 +134,35 @@ struct ContentView: View {
             .confirmationDialog("删除这条录音？", isPresented: Binding(get: { pendingDelete != nil },
                                                                  set: { if !$0 { pendingDelete = nil } }),
                                 titleVisibility: .visible) {
-                Button("删除", role: .destructive) {
+                Button("只删除录音列表中的副本", role: .destructive) {
                     if let item = pendingDelete { library.delete(item) }
                     pendingDelete = nil
                 }
+                if let item = pendingDelete, LocalArchive.hasCopy(item.info) || LocalArchive.failureMessage(in: item.dir) != nil {
+                    Button("同时删除“文件”中的本机副本", role: .destructive) {
+                        if let item = pendingDelete { library.delete(item, includingFilesCopy: true) }
+                        pendingDelete = nil
+                    }
+                }
             } message: {
-                Text("只删手机上的这份；已经传到 Mac 的不受影响。")
+                Text("已经同步到 iCloud 的副本不会删除。")
             }
             .confirmationDialog("删除所选录音？", isPresented: $confirmingBulkDelete,
                                 titleVisibility: .visible) {
-                Button("删除 \(selectedRecordingIDs.count) 条录音", role: .destructive) {
+                Button("只删除列表中的 \(selectedRecordingIDs.count) 条录音", role: .destructive) {
                     library.delete(ids: selectedRecordingIDs)
                     selectedRecordingIDs.removeAll()
                     isSelecting = false
                 }
+                if selectedItems.contains(where: { LocalArchive.hasCopy($0.info) || LocalArchive.failureMessage(in: $0.dir) != nil }) {
+                    Button("同时删除所选的“文件”本机副本", role: .destructive) {
+                        library.delete(ids: selectedRecordingIDs, includingFilesCopy: true)
+                        selectedRecordingIDs.removeAll()
+                        isSelecting = false
+                    }
+                }
             } message: {
-                Text("只删除手机上的所选录音；已经同步到 iCloud 的文件不受影响。")
+                Text("已经同步到 iCloud 的副本不会删除。")
             }
             .confirmationDialog("选择导出内容", isPresented: $choosingExportType,
                                 titleVisibility: .visible) {
@@ -182,6 +205,14 @@ struct ContentView: View {
     private func toggleSelection(_ item: Recording) {
         if selectedRecordingIDs.contains(item.id) { selectedRecordingIDs.remove(item.id) }
         else { selectedRecordingIDs.insert(item.id) }
+    }
+
+    private func hasTransferFailure(_ item: Recording) -> Bool {
+        guard !item.isLive, !item.info.tracks.isEmpty else { return false }
+        let localCopyPending = !LocalArchive.hasCopy(item.info)
+        let iCloudCopyPending = SyncPolicy.mode != .never && Export.folder() != nil && !Export.isExported(item.dir)
+        return localCopyPending || iCloudCopyPending
+            || Export.failureMessage(in: item.dir) != nil || LocalArchive.failureMessage(in: item.dir) != nil
     }
 
     private enum BatchExportSelection {
@@ -393,6 +424,19 @@ private struct SyncSettingsView: View {
 private struct Row: View {
     let item: Recording
 
+    private var localCopyStatus: (String, String) {
+        if LocalArchive.failureMessage(in: item.dir) != nil { return ("文件副本失败", "exclamationmark.icloud") }
+        return LocalArchive.hasCopy(item.info) ? ("文件已保存", "checkmark.folder") : ("文件待保存", "folder")
+    }
+
+    private var iCloudStatus: (String, String) {
+        if Export.isExported(item.dir) { return ("iCloud 已同步", "checkmark.icloud") }
+        if SyncPolicy.mode == .never { return ("iCloud 同步已关闭", "icloud.slash") }
+        if Export.failureMessage(in: item.dir) != nil { return ("iCloud 同步失败", "exclamationmark.icloud") }
+        if Export.folder() == nil { return ("未设置 iCloud 文件夹", "icloud") }
+        return ("等待 iCloud 同步", "icloud")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
@@ -407,6 +451,15 @@ private struct Row: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+            if !item.isLive && !item.info.tracks.isEmpty {
+                HStack(spacing: 12) {
+                    Label(localCopyStatus.0, systemImage: localCopyStatus.1)
+                    Label(iCloudStatus.0, systemImage: iCloudStatus.1)
+                }
+                .font(.caption)
+                .foregroundStyle(localCopyStatus.0 == "文件副本失败" || iCloudStatus.0 == "iCloud 同步失败"
+                                 ? Color.orange : Color.secondary)
+            }
         }
         .padding(.vertical, 2)
     }

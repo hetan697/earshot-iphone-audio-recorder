@@ -51,11 +51,8 @@ enum AudioMix {
         guard let session = AVAssetExportSession(asset: tracks.composition, presetName: AVAssetExportPresetAppleM4A) else {
             throw NSError(domain: "Earshot", code: 3)
         }
-        session.outputURL = out
-        session.outputFileType = .m4a
         session.audioMix = audioMix(tracks, levels: levels)
-        await session.export()
-        if let error = session.error { throw error }
+        try await export(session, to: out)
         return out
     }
 
@@ -69,10 +66,7 @@ enum AudioMix {
         guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else {
             throw NSError(domain: "Earshot", code: 3)
         }
-        session.outputURL = out
-        session.outputFileType = .m4a
-        await session.export()
-        if let error = session.error { throw error }
+        try await export(session, to: out)
         return out
     }
 
@@ -91,11 +85,23 @@ enum AudioMix {
         guard let session = AVAssetExportSession(asset: tracks.composition, presetName: AVAssetExportPresetAppleM4A) else {
             throw NSError(domain: "Earshot", code: 3)
         }
-        session.outputURL = out
-        session.outputFileType = .m4a
         session.audioMix = audioMix(tracks, levels: levels)
-        await session.export()
-        if let error = session.error { throw error }
+        try await export(session, to: out)
+    }
+
+    private static func export(_ session: AVAssetExportSession, to output: URL) async throws {
+        do {
+            try await session.export(to: output, as: .m4a)
+            let values = try output.resourceValues(forKeys: [.fileSizeKey])
+            guard (values.fileSize ?? 0) > 0,
+                  !(try await AVURLAsset(url: output).loadTracks(withMediaType: .audio)).isEmpty else {
+                throw NSError(domain: "Earshot", code: 5,
+                              userInfo: [NSLocalizedDescriptionKey: "导出完成，但音频文件无效"])
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: output)
+            throw error
+        }
     }
 
     private struct Meter {

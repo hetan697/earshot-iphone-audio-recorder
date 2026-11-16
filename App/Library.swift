@@ -87,17 +87,27 @@ final class Library: ObservableObject {
                 }
             }
         }
+        objectWillChange.send() // refresh row delivery state after local archive attempts
     }
 
-    func delete(_ item: Recording) {
+    func delete(_ item: Recording, includingFilesCopy: Bool = false) {
+        if includingFilesCopy { try? LocalArchive.removeCopy(item.info) }
         try? FileManager.default.removeItem(at: item.dir)
         reload()
     }
 
-    func delete(ids: Set<String>) {
+    func delete(ids: Set<String>, includingFilesCopy: Bool = false) {
         for item in items where ids.contains(item.id) {
+            if includingFilesCopy { try? LocalArchive.removeCopy(item.info) }
             try? FileManager.default.removeItem(at: item.dir)
         }
+        reload()
+    }
+
+    func retryCopies(_ item: Recording) {
+        guard !item.isLive else { return }
+        LocalArchive.copy(item.dir, item.info)
+        _ = Export.copy(item.dir, item.info)
         reload()
     }
 }
