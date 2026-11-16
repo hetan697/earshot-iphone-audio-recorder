@@ -2,12 +2,15 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var library: Library
+    @Environment(\.editMode) private var editMode
     @State private var pendingDelete: Recording?
+    @State private var selectedRecordingIDs = Set<String>()
+    @State private var confirmingBulkDelete = false
     @State private var path: [String] = []
 
     var body: some View {
         NavigationStack(path: $path) {
-            List {
+            List(selection: $selectedRecordingIDs) {
                 Section {
                     RecordControls(broadcast: library.liveBroadcast)
                         .listRowInsets(EdgeInsets())
@@ -31,9 +34,30 @@ struct ContentView: View {
             }
             .navigationTitle("Earshot")
             .toolbar {
+                ToolbarItemGroup(placement: .topBarLeading) {
+                    if !library.items.isEmpty {
+                        EditButton()
+                        if editMode?.wrappedValue == .active {
+                            Button(selectedRecordingIDs.count == library.items.count ? "取消全选" : "全选") {
+                                if selectedRecordingIDs.count == library.items.count {
+                                    selectedRecordingIDs.removeAll()
+                                } else {
+                                    selectedRecordingIDs = Set(library.items.map(\.id))
+                                }
+                            }
+                        }
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink(value: "settings") { Image(systemName: "gearshape") }
                         .accessibilityLabel("设置")
+                }
+                if editMode?.wrappedValue == .active, !selectedRecordingIDs.isEmpty {
+                    ToolbarItem(placement: .bottomBar) {
+                        Button("删除所选（\(selectedRecordingIDs.count)）", role: .destructive) {
+                            confirmingBulkDelete = true
+                        }
+                    }
                 }
             }
             .navigationDestination(for: String.self) { id in
@@ -60,6 +84,19 @@ struct ContentView: View {
                 }
             } message: {
                 Text("只删手机上的这份；已经传到 Mac 的不受影响。")
+            }
+            .confirmationDialog("删除所选录音？", isPresented: $confirmingBulkDelete,
+                                titleVisibility: .visible) {
+                Button("删除 \(selectedRecordingIDs.count) 条录音", role: .destructive) {
+                    library.delete(ids: selectedRecordingIDs)
+                    selectedRecordingIDs.removeAll()
+                    editMode?.wrappedValue = .inactive
+                }
+            } message: {
+                Text("只删除手机上的所选录音；已经同步到 iCloud 的文件不受影响。")
+            }
+            .onChange(of: library.items) { _, items in
+                selectedRecordingIDs.formIntersection(Set(items.map(\.id)))
             }
         }
     }

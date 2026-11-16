@@ -93,6 +93,13 @@ final class Library: ObservableObject {
         try? FileManager.default.removeItem(at: item.dir)
         reload()
     }
+
+    func delete(ids: Set<String>) {
+        for item in items where ids.contains(item.id) {
+            try? FileManager.default.removeItem(at: item.dir)
+        }
+        reload()
+    }
 }
 
 enum Format {
