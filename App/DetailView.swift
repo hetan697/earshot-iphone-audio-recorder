@@ -38,28 +38,6 @@ struct DetailView: View {
                 }
             }
 
-            if !item.isLive && !item.info.tracks.isEmpty {
-                Section {
-                    Label(localCopyStatus, systemImage: LocalArchive.failureMessage(in: item.dir) == nil
-                          ? (LocalArchive.hasCopy(item.info) ? "checkmark.folder" : "folder")
-                          : "exclamationmark.triangle.fill")
-                        .foregroundStyle(LocalArchive.failureMessage(in: item.dir) == nil ? Color.primary : Color.orange)
-                    Label(iCloudStatus, systemImage: iCloudSymbol)
-                        .foregroundStyle(Export.failureMessage(in: item.dir) == nil ? Color.primary : Color.orange)
-                    if transferCanRetry {
-                        Button {
-                            library.retryCopies(item)
-                        } label: {
-                            Label("重试保存与同步", systemImage: "arrow.clockwise")
-                        }
-                    }
-                } header: {
-                    Text("文件与 iCloud")
-                } footer: {
-                    Text("删除时可分别选择移除录音列表、“文件”本机副本和 iCloud 已同步副本。")
-                }
-            }
-
             if !item.isLive && hasTwoTracks {
                 Section {
                     Picker("音量均衡", selection: $automaticBalance) {
@@ -89,6 +67,28 @@ struct DetailView: View {
                          : "0 dB 是原始音量，可调 −24 到 +12 dB。手动音量会跟着这条录音保存，并用于「按手动设置导出」。")
                 }
                 .onChange(of: levels) { _, new in new.save(to: item.dir) }
+            }
+
+            if !item.isLive && !item.info.tracks.isEmpty {
+                Section {
+                    Label(localCopyStatus, systemImage: LocalArchive.failureMessage(in: item.dir) == nil
+                          ? (LocalArchive.hasCopy(item.info) ? "checkmark.folder" : "folder")
+                          : "exclamationmark.triangle.fill")
+                        .foregroundStyle(LocalArchive.failureMessage(in: item.dir) == nil ? Color.primary : Color.orange)
+                    Label(iCloudStatus, systemImage: iCloudSymbol)
+                        .foregroundStyle(Export.failureMessage(in: item.dir) == nil ? Color.primary : Color.orange)
+                    if transferCanRetry {
+                        Button {
+                            library.retryCopies(item)
+                        } label: {
+                            Label("重试保存与同步", systemImage: "arrow.clockwise")
+                        }
+                    }
+                } header: {
+                    Text("文件与 iCloud")
+                } footer: {
+                    Text("删除时可分别选择移除录音列表、“文件”本机副本和 iCloud 已同步副本。")
+                }
             }
 
             if summary != nil || transcript != nil {

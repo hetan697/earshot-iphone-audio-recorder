@@ -157,7 +157,6 @@ enum Export {
         try Data().write(to: dir.appendingPathComponent(deletedFile), options: .atomic)
         try FileManager.default.removeItem(at: markerURL)
         clearFailure(in: dir)
-        Store.notifyChanged()
     }
 
     static func allowCopyAgain(in dir: URL) {

@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var pendingDeletion: DeletionRequest?
     @State private var queuedDeletion: DeletionAction?
     @State private var deletionError: String?
+    @State private var isDeleting = false
     @State private var selectedRecordingIDs = Set<String>()
     @State private var isSelecting = false
     @State private var choosingExportType = false
@@ -60,7 +61,12 @@ struct ContentView: View {
                             } else {
                                 NavigationLink(value: item.id) { Row(item: item) }
                                     .swipeActions {
-                                        Button("删除", role: .destructive) { requestDeletion([item]) }
+                                        Button("删除", role: .destructive) {
+                                            // Let UIKit finish committing the swipe action before presenting a sheet.
+                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                                                requestDeletion([item])
+                                            }
+                                        }
                                     }
                             }
                         }
@@ -164,6 +170,15 @@ struct ContentView: View {
                 Text(exportError ?? "")
             }
         }
+        .overlay {
+            if isDeleting {
+                ProgressView("正在删除…")
+                    .padding(16)
+                    .background(.regularMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+        }
+        .disabled(isDeleting)
     }
 
     private var selectableItems: [Recording] {
@@ -191,15 +206,21 @@ struct ContentView: View {
     private func performQueuedDeletion() {
         guard let action = queuedDeletion else { return }
         queuedDeletion = nil
-        do {
-            try library.delete(ids: Set(action.request.items.map(\.id)), fromList: action.fromList,
-                               filesCopy: action.filesCopy, iCloudCopy: action.iCloudCopy)
-            if action.fromList {
-                selectedRecordingIDs.subtract(action.request.items.map(\.id))
-                isSelecting = false
+        isDeleting = true
+        Task { @MainActor in
+            defer { isDeleting = false }
+            // Wait for the sheet dismissal animation before changing the List's data source.
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            do {
+                try await library.delete(ids: Set(action.request.items.map(\.id)), fromList: action.fromList,
+                                         filesCopy: action.filesCopy, iCloudCopy: action.iCloudCopy)
+                if action.fromList {
+                    selectedRecordingIDs.subtract(action.request.items.map(\.id))
+                    isSelecting = false
+                }
+            } catch {
+                deletionError = error.localizedDescription
             }
-        } catch {
-            deletionError = error.localizedDescription
         }
     }
 

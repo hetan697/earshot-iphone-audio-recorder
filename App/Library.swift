@@ -87,28 +87,31 @@ final class Library: ObservableObject {
                 }
             }
         }
-        objectWillChange.send() // refresh row delivery state after local archive attempts
     }
 
-    func delete(ids: Set<String>, fromList: Bool, filesCopy: Bool, iCloudCopy: Bool) throws {
+    func delete(ids: Set<String>, fromList: Bool, filesCopy: Bool, iCloudCopy: Bool) async throws {
         let selected = items.filter { ids.contains($0.id) }
-        do {
-            if filesCopy {
-                for item in selected {
-                    try LocalArchive.removeCopy(item.info, suppressingFutureCopyAt: fromList ? nil : item.dir)
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    if filesCopy {
+                        for item in selected {
+                            try LocalArchive.removeCopy(item.info, suppressingFutureCopyAt: fromList ? nil : item.dir)
+                        }
+                    }
+                    if iCloudCopy {
+                        for item in selected { try Export.removeCopy(item.dir) }
+                    }
+                    if fromList {
+                        for item in selected where FileManager.default.fileExists(atPath: item.dir.path) {
+                            try FileManager.default.removeItem(at: item.dir)
+                        }
+                    }
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
                 }
             }
-            if iCloudCopy {
-                for item in selected { try Export.removeCopy(item.dir) }
-            }
-            if fromList {
-                for item in selected where FileManager.default.fileExists(atPath: item.dir.path) {
-                    try FileManager.default.removeItem(at: item.dir)
-                }
-            }
-        } catch {
-            reload()
-            throw error
         }
         reload()
     }
