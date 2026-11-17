@@ -18,34 +18,48 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            List {
-                Section {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 12) {
                     RecordControls(broadcast: library.liveBroadcast)
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
-                } footer: {
                     Text("现场对话：用麦克风录身边的人说话。手机声音：录正在播放的视频、直播、会议、通话，只录声音不存画面；想把自己说的话也录进去，在弹出的面板里打开麦克风。本机副本可在「文件」→「我的 iPhone」→「Earshot」查看；双音轨录音还会生成音量均衡后的 balanced.m4a。")
-                }
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.background, in: RoundedRectangle(cornerRadius: 14))
 
-                Section {
-                    Toggle("待命模式", isOn: Binding(get: { standby }, set: { standby = $0; Standby.enabled = $0 }))
-                    if standby {
-                        TimelineView(.periodic(from: .now, by: 2)) { _ in
-                            if Standby.isRunning {
-                                Label(Standby.armed ? "待命中 · 正在录" : "待命中：按 Action Button 开始录",
-                                      systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-                            } else {
-                                Button("开启待命（点一次「开始直播」）") { AppState.shared.picker.tap() }
+                    VStack(alignment: .leading, spacing: 10) {
+                        Toggle("待命模式", isOn: Binding(get: { standby }, set: { standby = $0; Standby.enabled = $0 }))
+                        if standby {
+                            TimelineView(.periodic(from: .now, by: 2)) { _ in
+                                if Standby.isRunning {
+                                    Label(Standby.armed ? "待命中 · 正在录" : "待命中：按 Action Button 开始录",
+                                          systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                                } else {
+                                    Button("开启待命（点一次「开始直播」）") { AppState.shared.picker.tap() }
+                                }
                             }
                         }
+                        Text("录屏会话会常驻运行；开始前需在系统面板点一次「开始直播」。待命时不保存声音，按 Action Button 后才开始录制。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
-                } footer: {
-                    Text("录屏会话会常驻运行；开始前需在系统面板点一次「开始直播」。待命时不保存声音，按 Action Button 后才开始录制。")
-                }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.background, in: RoundedRectangle(cornerRadius: 14))
 
-                Section {
+                    VStack(alignment: .leading, spacing: 10) {
+                        if !library.items.isEmpty {
+                            Text("录音").font(.headline).padding(.horizontal, 4)
+                        }
                     if library.items.isEmpty {
-                        Text("还没有录音").foregroundStyle(.secondary)
+                            Text("还没有录音")
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding(20)
+                                .background(.background, in: RoundedRectangle(cornerRadius: 14))
                     } else {
                         ForEach(library.items) { item in
                             if isSelecting {
@@ -55,26 +69,43 @@ struct ContentView: View {
                                             .foregroundStyle(selectedRecordingIDs.contains(item.id) ? Color.accentColor : .secondary)
                                         Row(item: item)
                                     }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 10)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(.background, in: RoundedRectangle(cornerRadius: 12))
                                 }
                                 .buttonStyle(.plain)
                                 .disabled(item.isLive || item.info.tracks.isEmpty)
                             } else {
-                                NavigationLink(value: item.id) { Row(item: item) }
-                                    .swipeActions {
+                                HStack(spacing: 8) {
+                                    NavigationLink(value: item.id) { Row(item: item) }
+                                        .buttonStyle(.plain)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    Menu {
                                         Button("删除", role: .destructive) {
-                                            // Let UIKit finish committing the swipe action before presenting a sheet.
-                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                                                requestDeletion([item])
-                                            }
+                                            requestDeletion([item])
                                         }
+                                    } label: {
+                                        Image(systemName: "ellipsis.circle")
+                                            .font(.title3)
+                                            .foregroundStyle(.secondary)
+                                            .frame(width: 40, height: 40)
+                                        }
+                                    .accessibilityLabel("录音操作")
                                     }
+                                .padding(.leading, 12)
+                                .padding(.trailing, 4)
+                                .padding(.vertical, 6)
+                                .background(.background, in: RoundedRectangle(cornerRadius: 12))
                             }
                         }
                     }
-                } header: {
-                    if !library.items.isEmpty { Text("录音") }
+                    }
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
+            .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("Earshot")
             .toolbar {
                 ToolbarItemGroup(placement: .topBarLeading) {
