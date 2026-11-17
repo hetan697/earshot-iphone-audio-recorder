@@ -43,10 +43,10 @@ struct ContentView: View {
                     Text("录屏会话会常驻运行；开始前需在系统面板点一次「开始直播」。待命时不保存声音，按 Action Button 后才开始录制。")
                 }
 
-                if library.items.isEmpty {
-                    Section { Text("还没有录音").foregroundStyle(.secondary) }
-                } else {
-                    Section("录音") {
+                Section {
+                    if library.items.isEmpty {
+                        Text("还没有录音").foregroundStyle(.secondary)
+                    } else {
                         ForEach(library.items) { item in
                             if isSelecting {
                                 Button { toggleSelection(item) } label: {
@@ -71,6 +71,8 @@ struct ContentView: View {
                             }
                         }
                     }
+                } header: {
+                    if !library.items.isEmpty { Text("录音") }
                 }
             }
             .navigationTitle("Earshot")
@@ -215,6 +217,8 @@ struct ContentView: View {
                 try await library.delete(ids: Set(action.request.items.map(\.id)), fromList: action.fromList,
                                          filesCopy: action.filesCopy, iCloudCopy: action.iCloudCopy)
                 if action.fromList {
+                    // Keep rows in selection presentation until SwiftUI commits the item removals.
+                    try? await Task.sleep(nanoseconds: 350_000_000)
                     selectedRecordingIDs.subtract(action.request.items.map(\.id))
                     isSelecting = false
                 }
